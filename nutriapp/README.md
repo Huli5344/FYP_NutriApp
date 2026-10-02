@@ -151,7 +151,7 @@ destinations, but they belong to the other two modules and are inert here.
 
 ## Offline behaviour
 
-The device's own SQLite database is the source of truth. Screens read and write
+The device's own SQLite database is the source. Screens read and write
 locally and never wait on the network. Sync runs on launch and on returning to
 the foreground, and a failure is silent: being offline is the normal case for a
 food diary, not an error worth interrupting someone over.
