@@ -1,0 +1,25 @@
+name: nutriapp_diary
+description: Nutri App - Diary and Recommendations module.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqflite: ^2.3.0        # local SQLite, the source of truth for the interface
+  path: ^1.8.3
+  path_provider: ^2.1.1
+  http: ^1.1.0           # talks to the Flask backend
+  uuid: ^4.2.1           # client-generated entry ids, so devices never collide
+  intl: ^0.19.0          # date formatting
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
