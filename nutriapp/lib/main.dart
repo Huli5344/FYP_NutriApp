@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'screens/login_screen.dart';
 import 'screens/diary_screen.dart';
 import 'screens/discover_screen.dart';
 import 'screens/home_screen.dart';
@@ -29,7 +30,7 @@ class NutriApp extends StatelessWidget {
       title: 'Nutri App',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: const Shell(),
+      home: const LoginScreen(),
     );
   }
 }
