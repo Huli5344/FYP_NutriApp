@@ -17,15 +17,28 @@ services:
     region: singapore
     # The Flask app is in backend/, not at the repository root.
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    # Idempotent: CREATE TABLE IF NOT EXISTS throughout, so it is safe on
-    # every deploy. It uses the direct connection, because DDL through Neon's
-    # pooler fails in ways that never mention pooling.
+    # The schema step is part of the build, not a preDeployCommand: Render
+    # rejects pre-deploy commands on the free plan ("pre-deploy command is
+    # not supported for free tier services"). Build commands run on every
+    # plan, and environment variables are available to them, so this works
+    # the same way -- it just runs a little earlier, before the old instance
+    # is replaced.
+    #
+    # database.init() is idempotent (CREATE TABLE IF NOT EXISTS throughout),
+    # so running it on every deploy is safe. It uses the direct connection,
+    # because DDL through Neon's pooler fails in ways that never mention
+    # pooling.
     #
     # It creates the schema but does NOT load the 2,692 foods: that is
     # tools/load_foods.py, which lives outside rootDir and is a one-off you
     # run from your own machine. See DEPLOY.md.
-    preDeployCommand: python -c "import database; database.init()"
+    #
+    # The trade-off: if Neon is unreachable at build time the build fails,
+    # even for a deploy that only changed Python. That is the right way round
+    # -- a server that cannot reach its database is not worth shipping -- but
+    # if it ever blocks you, drop the second half of this line and run the
+    # same command from your laptop instead.
+    buildCommand: pip install -r requirements.txt && python -c "import database; database.init()"
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --access-logfile -
 
     # Render pings this itself after a deploy. It must be the endpoint that
