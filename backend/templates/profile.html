@@ -1,0 +1,110 @@
+{% extends "base.html" %}{% set active='profile' %}
+{% block heading %}Profile{% endblock %}
+{% block headright %}<a class="tm" href="{{ url_for('profile_setup') }}">Edit</a>{% endblock %}
+{% block content %}
+
+{# The target panel shows its working. A number someone is asked to live by
+   should not arrive unexplained. #}
+<div class="card">
+  <div class="between">
+    <div>
+      <div class="big">{{ profile.target_kcal }}</div>
+      <div class="tm">kcal a day</div>
+    </div>
+    <span class="chip {{ 'on' if profile.target_is_manual }}">
+      {{ 'Set by you' if profile.target_is_manual else 'Calculated' }}
+    </span>
+  </div>
+  <div class="tm" style="margin-top:10px">
+    Resting burn about {{ bmr }} kcal, &times; {{ multiplier }} for
+    {{ profile.activity_level|lower }} &approx; {{ maintenance }} kcal to
+    maintain{% if adjustment %}, {{ '+' if adjustment > 0 }}{{ adjustment }}
+    for {{ profile.goal|lower }}{% endif %}.
+    Calculated: {{ profile.computed_target_kcal }} kcal.
+  </div>
+</div>
+
+<h3>Goal</h3>
+<div class="card" style="padding:0 10px">
+  <div class="li"><div class="g"><div class="tm">Goal</div></div><div class="r">{{ profile.goal }}</div></div>
+  <div class="li"><div class="g"><div class="tm">Target weight</div></div>
+    <div class="r">{{ (profile.target_weight_kg ~ ' kg') if profile.target_weight_kg else 'Not set' }}</div></div>
+  <div class="li"><div class="g"><div class="tm">Current weight</div></div><div class="r">{{ profile.weight_kg }} kg</div></div>
+  <div class="li"><div class="g"><div class="tm">Macro split</div></div>
+    <div class="r">{{ (split[0] * 100)|round|int }}% carbs &middot;
+      {{ (split[1] * 100)|round|int }}% protein &middot;
+      {{ (split[2] * 100)|round|int }}% fat</div></div>
+</div>
+
+<form method="post" action="{{ url_for('log_weight') }}">
+  <label class="lbl" for="kg">Log today's weight (kg)</label>
+  <input id="kg" name="kg" type="number" step="0.1" min="25" max="400"
+         value="{{ profile.weight_kg }}">
+  <button class="btn s" type="submit">Log weight</button>
+  <div class="tm">Logging a weight also recalculates your target, unless you
+    set it by hand.</div>
+</form>
+
+{% if weights %}
+<h3>Recent weights</h3>
+<div class="card" style="padding:0 10px">
+  {% for w in weights %}
+  <div class="li">
+    <div class="g">
+      <div class="t">{{ w['kg'] }} kg</div>
+      <div class="tm">{{ w['recorded_at'][:10] }}{% if w['note'] %} &middot; {{ w['note'] }}{% endif %}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h3>About you</h3>
+<div class="card" style="padding:0 10px">
+  <div class="li"><div class="g"><div class="tm">Name</div></div><div class="r">{{ profile.name }}</div></div>
+  <div class="li"><div class="g"><div class="tm">Age</div></div><div class="r">{{ profile.age }}</div></div>
+  <div class="li"><div class="g"><div class="tm">Gender</div></div>
+    <div class="r">{{ profile.gender or 'Not specified' }}</div></div>
+  <div class="li"><div class="g"><div class="tm">Height</div></div><div class="r">{{ profile.height_cm }} cm</div></div>
+  <div class="li"><div class="g"><div class="tm">Activity</div></div><div class="r">{{ profile.activity_level }}</div></div>
+</div>
+
+<h3>Diet</h3>
+<div class="card">
+  <div class="lbl">Preferences</div>
+  {% if profile.preferences %}
+  <div class="chips">{% for p in profile.preferences %}<span class="chip">{{ p }}</span>{% endfor %}</div>
+  {% else %}
+  <div class="tm">None chosen. Suggestions are not narrowed.</div>
+  {% endif %}
+
+  <div class="lbl" style="margin-top:12px">Restrictions</div>
+  {% if profile.restrictions %}
+  <div class="chips">{% for r in profile.restrictions %}<span class="chip warn">{{ r }}</span>{% endfor %}</div>
+  {# Shows the translation rather than hiding it. The form says "Dairy"; the
+     recipe data says "milk"; this is where someone can see the two connected. #}
+  <div class="note" style="margin-top:10px">
+    Matched against recipes tagged {{ profile.allergens|join(', ') }}. Meals
+    listing any of these are removed before anything is ranked.
+  </div>
+  {% else %}
+  <div class="tm">None recorded. Nothing is filtered out.</div>
+  {% endif %}
+</div>
+
+<h3>Account</h3>
+<div class="card" style="padding:0 10px">
+  <div class="li"><div class="g"><div class="tm">Signed in as</div></div>
+    <div class="r">{{ profile.email or 'Not set' }}</div></div>
+  <div class="li"><div class="g"><div class="tm">Profile updated</div></div>
+    <div class="r">{{ profile.updated_at[:16]|replace('T', ' ') }}</div></div>
+</div>
+
+<div class="note" style="margin-top:10px">
+  Accounts are handled by a separate module, so this prototype has no sign-in
+  and stores no password.
+</div>
+
+<a class="btn danger" href="{{ url_for('reset_everything') }}">Clear everything</a>
+
+{% endblock %}

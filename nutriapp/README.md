@@ -111,8 +111,10 @@ flutter test
 
 A port of the backend's Python tests, so both implementations are held to the
 same behaviour: serving scaling, meal categorisation including the window
-boundaries, tagging thresholds, the daily summary, allergen exclusion, and the
-reveal keeping the first three suggestions in place.
+boundaries, tagging thresholds, the daily summary, allergen exclusion, the
+reveal keeping the first three suggestions in place, the calorie-target
+formula and its floors, the label-to-token translation, the insights
+arithmetic, and the weight trend.
 
 ---
 
@@ -125,17 +127,21 @@ reveal keeping the first three suggestions in place.
 | `lib/db.dart` | On-device SQLite. The source of truth for the interface |
 | `lib/api.dart` | Backend client: sync and recommendations. Every call may fail |
 | `lib/seed_data.dart` | Foods and fallback recipes, generated from the backend |
-| `lib/ui.dart` | Theme and the shared widgets |
+| `lib/accounts.dart` | The sign-in stub, isolated so its limits are obvious |
+| `lib/ui.dart` | Theme, shared widgets and the hand-drawn charts |
 | `lib/screens/` | One file per screen |
 
 `logic.dart` is a direct port of the backend's `logic.py`. It lives on the
 device because the diary has to work offline, so the calculations cannot sit
 behind an API call.
 
-### The seven screens
+### The screens
 
 | Screen | File |
 |---|---|
+| Sign in | `screens/login_screen.dart` |
+| Register (stub) | `screens/register_screen.dart` |
+| Profile setup, five steps | `screens/onboarding/` |
 | Home dashboard | `screens/home_screen.dart` |
 | Add food and serving | `screens/add_food_screen.dart` |
 | Edit or delete an entry | `screens/edit_entry_screen.dart` |
@@ -143,9 +149,49 @@ behind an API call.
 | Recommendations | `screens/discover_screen.dart` |
 | Recommendation detail | `screens/recipe_detail_screen.dart` |
 | Saved to diary | `screens/saved_screen.dart` |
+| Insights | `screens/insights_screen.dart` |
+| Profile and goals | `screens/profile_screen.dart` |
 
-Insights and Profile appear in the tab bar because the design has five
-destinations, but they belong to the other two modules and are inert here.
+All five tab destinations work. The onboarding flow is reused as the edit form
+rather than duplicated: two forms over the same fields drift apart, and the
+validation would have to be written twice.
+
+---
+
+## The profile, and why there is a translation layer
+
+Setup collects answers in words people use. The recipe data is tagged in
+allergen tokens. They are not the same vocabulary:
+
+| Setup says | Recipe data says |
+|---|---|
+| Dairy | `milk` |
+| Peanuts | `peanut` |
+| Tree Nuts | `nuts` |
+| Eggs | `egg` |
+
+`normaliseAllergens` in `logic.dart` maps between them, and both the raw
+answers and the tokens are stored: the answers are what the edit form has to
+show back, and what the Discover screen reads out, so someone who ticked
+"Dairy" is never told about "milk".
+
+Without that map the comparison in `isSafeFor` finds nothing, and a declared
+allergy filters out nothing at all — the recipe is reported as safe. There is a
+test for exactly that failure mode.
+
+Every preference on the setup screen maps to a tag the data carries, so no
+option can be chosen and then change nothing.
+
+### The calorie target
+
+Mifflin-St Jeor for resting burn, scaled by activity level, adjusted for the
+goal, rounded to ten. The one rule worth knowing: **the result is never below
+resting burn.** A small, sedentary person on a 500 kcal deficit comes out below
+what their body uses at rest, and the formula refuses that. The Profile tab
+shows the working.
+
+A target can be overridden by hand. The calculated figure is kept alongside it,
+so the override survives an edit to height or weight.
 
 ---
 
@@ -171,13 +217,33 @@ exists for, and the one an emulator will not show you.
 
 ## Known points
 
+- **There is no real sign-in.** One fixed account, no password storage, no
+  token. `lib/accounts.dart` holds all of it and says so, and the login screen
+  tells the user. Replacing that file with a call to the backend would not
+  require changing anything else: the rest of the app depends on a profile
+  existing, not on how someone proved who they are.
 - **Rounding differs from the backend by one calorie on exact halves.** Dart
   rounds half away from zero (910.5 → 911); Python uses banker's rounding
   (910.5 → 910). Harmless, but the two disagree on `607 × 1.5`.
 - Recipe suggestions need the backend. With no connection the app falls back to
   25 meals shipped in the binary, and says so on screen.
-- The profile is fixed (`Profile` in `lib/models.dart`). Accounts and goals
-  belong to another module.
-- If your Flutter version rejects `value:` on `DropdownButtonFormField`, change
-  those three occurrences to `initialValue:` — the parameter was renamed in a
-  recent release.
+- **Halal and pescatarian tags establish absence, not certification.** They are
+  derived by looking for ingredient words that rule a meal out, the same way
+  allergens are. A meal with no pork or alcohol in its ingredient list is not
+  thereby halal — that depends on slaughter and handling, which no recipe
+  database records. The interface says so where it matters.
+- Charts are drawn by hand rather than with a charting package, so there is no
+  extra dependency to resolve. See `WireVBars`, `WireStackBar` and
+  `WireSparkline` in `lib/ui.dart`.
+
+---
+
+## Upgrading an installed copy
+
+The schema is at **version 2**: version 1 had `entries`, `meta` and `shown`;
+version 2 adds `profile` and `weights`. `LocalDb` has an `onUpgrade` that runs
+the version-2 step on a device that already holds a version-1 database.
+
+This matters if you have already run the app on a phone. Editing `onCreate`
+alone would not have been enough — it only runs on a fresh install, so the app
+would work on a wiped device and fail with `no such table: profile` on yours.

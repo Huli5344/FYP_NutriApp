@@ -1,4 +1,5 @@
 /// Edit or delete an entry.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -21,6 +22,14 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
   late final TextEditingController _noteController;
   late String _category;
 
+  /// The original per-serving figures, looked up once.
+  ///
+  /// Loaded here rather than during a rebuild because the food table is now a
+  /// queried database rather than a constant list, and `build` cannot await.
+  /// Null until it arrives, or for an entry with no food behind it, in which
+  /// case the figures are divided back out of the stored totals.
+  Nutrition? _originalPerServing;
+
   @override
   void initState() {
     super.initState();
@@ -28,6 +37,15 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
         TextEditingController(text: '${widget.entry.quantity}');
     _noteController = TextEditingController(text: widget.entry.note);
     _category = widget.entry.category;
+    _loadOriginal();
+  }
+
+  Future<void> _loadOriginal() async {
+    final foodId = widget.entry.foodId;
+    if (foodId == null) return;
+    final food = await LocalDb.instance.foodById(foodId);
+    if (!mounted || food == null) return;
+    setState(() => _originalPerServing = food.perServing);
   }
 
   @override
@@ -46,10 +64,7 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
   /// Recompute from the original per-serving values rather than the stored
   /// totals, so repeated edits do not compound rounding error.
   Nutrition _recalculated() {
-    final food = widget.entry.foodId == null
-        ? null
-        : LocalDb.instance.foodById(widget.entry.foodId!);
-    final perServing = food?.perServing ??
+    final perServing = _originalPerServing ??
         Nutrition(
           kcal: (widget.entry.kcal / widget.entry.quantity).round(),
           carbsG: widget.entry.carbsG / widget.entry.quantity,
@@ -163,7 +178,7 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
                 const Text('Meal category', style: tLabel),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
-                  value: _category,
+                  initialValue: _category,
                   items: [
                     for (final c in categories)
                       DropdownMenuItem(
@@ -179,11 +194,11 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
                     'Your choice overrides the automatic time-of-day category.',
                     style: tMute),
                 const SizedBox(height: 12),
-                Row(
+                const Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Dietary tags', style: tHead),
-                    const Text('Auto', style: tLabel),
+                    Text('Dietary tags', style: tHead),
+                    Text('Auto', style: tLabel),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -191,10 +206,10 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
                   spacing: 6,
                   runSpacing: 6,
                   children: autoTags(recalculated).isEmpty
-                      ? [const Chip_('none')]
+                      ? [const WireChip('none')]
                       : [
                           for (final t in autoTags(recalculated))
-                            Chip_(t, filled: true)
+                            WireChip(t, filled: true)
                         ],
                 ),
                 const SizedBox(height: 12),

@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% set active='diary' %}
+{% block back %}<a class="back" href="{{ url_for('diary') }}">&larr;</a>{% endblock %}
+{% block heading %}Edit entry{% endblock %}
+{% block content %}
+
+{# The entry, then serving, category and tags, then save or delete #}
+<div class="card">
+  <p class="t"><b>{{ entry['food_name'] }}</b></p>
+  <p class="tm">Logged {{ entry['eaten_at'][8:10] }} {{ month }} at {{ entry['eaten_at'][11:16] }}
+    &middot; {{ entry['kcal'] }} kcal</p>
+</div>
+
+<form method="post" class="card">
+  <div class="row">
+    <div>
+      <label>Serving</label>
+      <div class="chip" style="display:block;padding:9px 10px">{{ entry['serving'] }}</div>
+    </div>
+    <div>
+      <label for="quantity">Quantity</label>
+      <input id="quantity" name="quantity" type="number" step="0.25" min="0.25" value="{{ entry['quantity'] }}">
+    </div>
+  </div>
+  <p class="tm">Currently {{ entry['kcal'] }} kcal at {{ entry['quantity'] }} &times;
+    {{ entry['serving'] }}. Changing the quantity recalculates calories, macros and tags.</p>
+
+  <div>
+    <label for="category">Meal category</label>
+    <select id="category" name="category">
+      {% for c in categories %}
+      <option value="{{ c }}" {{ 'selected' if c == entry['category'] }}>
+        {{ c|capitalize }}{{ ' — current' if c == entry['category'] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <p class="tm">Your choice overrides the automatic time-of-day category.</p>
+
+  <div class="between">
+    <h3>Dietary tags</h3>
+    <span class="lbl">Auto</span>
+  </div>
+  <div class="chips">
+    {% for t in entry['tags'].split(',') if t %}<span class="chip on">{{ t }}</span>
+    {% else %}<span class="chip">none</span>{% endfor %}
+  </div>
+
+  <div>
+    <label for="note">Note</label>
+    <input id="note" name="note" value="{{ entry['note'] }}">
+  </div>
+
+  <button type="submit">Save changes</button>
+</form>
+
+<form method="post" onsubmit="return confirm('Delete this entry? Today\u2019s total will update.')">
+  <input type="hidden" name="action" value="delete">
+  <button class="btn danger" type="submit">Delete entry</button>
+</form>
+<div class="note">Deleting asks for confirmation and updates the day's totals immediately.
+There is no undo.</div>
+{% endblock %}

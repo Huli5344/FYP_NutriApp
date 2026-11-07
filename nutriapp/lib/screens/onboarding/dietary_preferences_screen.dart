@@ -16,11 +16,17 @@ class DietaryPreferencesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<String> preferences = [
+      // Every option here maps to a tag the recipe data actually carries, via
+      // dietTokens in logic.dart. An option with no counterpart in the data
+      // could be chosen and would then change nothing, which is worse than not
+      // offering it.
       'Vegetarian',
       'Vegan',
-      'Halal',
       'Pescatarian',
-      'Mediterranean',
+      'Halal',
+      'High protein',
+      'High fibre',
+      'Low carb',
     ];
 
     return ListView(

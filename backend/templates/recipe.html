@@ -1,0 +1,66 @@
+{% extends "base.html" %}{% set active='discover' %}
+{% block back %}<a class="back" href="{{ url_for('discover') }}">&larr;</a>{% endblock %}
+{% block heading %}{{ r.name }}{% endblock %}
+{% block content %}
+
+{# Photo, calories with the allergen verdict, macros, ingredients, save #}
+<div class="box" style="height:110px">Meal photo</div>
+
+<div class="between">
+  <p class="big">{{ r.kcal }}</p>
+  <span class="chip {{ 'on' if clear else 'warn' }}">
+    {{ 'No recorded allergens listed' if clear else 'Lists an allergen you recorded' }}</span>
+</div>
+{% if r.estimated %}
+<p class="tm">Estimated from the ingredient list, {{ r.confidence }} confidence
+({{ (r.coverage * 100)|round|int }}% of ingredients recognised). Assumes 4 servings.</p>
+{% else %}
+<p class="tm">kcal per serving{% if r.minutes %}, about {{ r.minutes }} minutes to prepare{% endif %}.</p>
+{% endif %}
+
+<div class="card">
+  <div class="row">
+    <div class="stat"><div class="v">{{ r.carbs_g }} g</div><div class="l">Carbs</div></div>
+    <div class="stat"><div class="v">{{ r.protein_g }} g</div><div class="l">Protein</div></div>
+    <div class="stat"><div class="v">{{ r.fat_g }} g</div><div class="l">Fat</div></div>
+  </div>
+</div>
+
+<h3>Ingredients</h3>
+<div class="card" style="padding:0 10px">
+  {% for i in r.ingredients %}
+  <div class="li"><div class="g"><div class="t">{{ i }}</div></div></div>
+  {% endfor %}
+</div>
+
+{% if r.allergens %}
+<div class="note w">Ingredients list: {{ r.allergens|join(', ') }}.</div>
+{% endif %}
+{% if clear and profile.restrictions %}
+<div class="note">Checked against your recorded restrictions:
+no {{ profile.restrictions|join(', no ')|lower }}.</div>
+{% elif not profile.restrictions %}
+<div class="note">You have no dietary restrictions recorded, so nothing was
+checked.</div>
+{% endif %}
+{% if r.estimated %}
+<div class="note w">Allergens are worked out by matching ingredient names. TheMealDB is
+a recipe database, not an allergen certification service, and cannot account for
+substitutions, undeclared ingredients or cross-contamination. Check the full recipe.</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('save_recipe', recipe_id=r.id) }}" class="card">
+  <div>
+    <label for="category">Save as</label>
+    <select id="category" name="category">
+      {% for c in categories %}
+      <option value="{{ c }}" {{ 'selected' if c == slot }}>{{ c|capitalize }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Save to diary</button>
+</form>
+<a class="btn s" href="{{ url_for('discover', slot=slot) }}">Not for me</a>
+{% if r.page %}<a class="btn g sm" href="{{ r.page }}" target="_blank">Full recipe on TheMealDB</a>{% endif %}
+<p class="tm">{{ attribution }}</p>
+{% endblock %}

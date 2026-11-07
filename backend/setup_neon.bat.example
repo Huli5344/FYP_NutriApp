@@ -1,0 +1,47 @@
+@echo off
+REM Create the schema and load the 2,692 foods into Neon. Run once.
+REM Copy to setup_neon.bat and paste your connection string below.
+REM
+REM IMPORTANT: this script uses the DIRECT connection string, NOT the pooled
+REM one that run.bat uses. Creating a schema is a migration, and Neon's pooled
+REM connections run through PgBouncer in transaction mode, which does not
+REM support session-level operations. Over a pooled connection this can fail in
+REM ways that never mention pooling -- a SET that does not persist past its own
+REM transaction, or a write landing in a read-only transaction inherited from
+REM an earlier client.
+REM
+REM The direct string is the one WITHOUT "-pooler" in the hostname. Neon's
+REM Connect dialog offers both; pick the unpooled one here.
+REM ---------------------------------------------------------------------------
+
+set DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+
+echo %DATABASE_URL% | findstr /C:"-pooler" >nul
+if not errorlevel 1 (
+  echo.
+  echo   That is the POOLED connection string ^(it contains "-pooler"^).
+  echo   Schema creation needs the DIRECT one. In Neon's Connect dialog,
+  echo   switch off pooled connection and copy that string instead.
+  echo.
+  pause
+  exit /b 1
+)
+
+echo Creating the schema...
+python -c "import database; database.init()"
+if errorlevel 1 goto failed
+
+echo Loading the food dataset...
+python ..\tools\load_foods.py foods.db
+if errorlevel 1 goto failed
+
+echo.
+echo Done. Start the server with run.bat, which uses the POOLED string.
+pause
+exit /b 0
+
+:failed
+echo.
+echo That did not finish. Read the message above before re-running.
+pause
+exit /b 1

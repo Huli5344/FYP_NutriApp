@@ -1,0 +1,39 @@
+@echo off
+REM ---------------------------------------------------------------------------
+REM Start the backend against Neon.
+REM
+REM Copy this to run.bat, paste your own values, and run it by double-clicking
+REM or typing  run.bat  in the backend folder.
+REM
+REM WHY THIS FILE EXISTS: environment variables set with `set` live only in the
+REM terminal you typed them in. Setting DATABASE_URL in one window and running
+REM python in another is the most common way this goes wrong -- the app starts,
+REM finds no DATABASE_URL, and quietly uses the local SQLite file instead. It
+REM looks like it worked. This script sets them and starts the app together, so
+REM that cannot happen.
+REM
+REM run.bat holds a password. It is in .gitignore. Do not commit it.
+REM ---------------------------------------------------------------------------
+
+REM Paste the POOLED connection string from Neon's Connect button: the one
+REM WITH "-pooler" in the hostname. Pooled is correct here because this app
+REM opens one short-lived connection per request, which is exactly what
+REM PgBouncer is for. Schema creation is the opposite case -- see
+REM setup_neon.bat, which needs the direct string.
+set DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxx-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+
+REM Signs the browser session cookie. Generate 64 hex characters with:
+REM     python -c "import secrets; print(secrets.token_hex(32))"
+set SECRET_KEY=PASTE_64_HEX_CHARACTERS_HERE
+
+if "%SECRET_KEY%"=="PASTE_64_HEX_CHARACTERS_HERE" (
+  echo.
+  echo   Set SECRET_KEY in run.bat first. Generate one with:
+  echo     python -c "import secrets; print^(secrets.token_hex^(32^)^)"
+  echo.
+  pause
+  exit /b 1
+)
+
+python app.py
+pause

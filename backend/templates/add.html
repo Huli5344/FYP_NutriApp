@@ -1,0 +1,100 @@
+{% extends "base.html" %}{% set active='home' %}
+{% block back %}<a class="back" href="{{ url_for('dashboard') }}">&larr;</a>{% endblock %}
+{% block heading %}{{ selected['name'] if selected else 'Add food' }}{% endblock %}
+{% block content %}
+
+{# Search and the serving controls share one screen: a serving size needs a
+   food to apply to, so the picker sits above and collapses once one is chosen. #}
+<form method="get" class="card">
+  <div>
+    <label for="q">Search foods</label>
+    <input id="q" name="q" value="{{ q }}" placeholder="rice, oats, salmon..."
+           {{ 'autofocus' if not selected }}>
+  </div>
+  <button class="btn s sm" type="submit">Search</button>
+</form>
+
+<div class="card" style="padding:0 10px">
+  {% for f in results %}
+  <a class="li" href="{{ url_for('add_food', food_id=f['food_id'], q=q) }}">
+    <div class="g">
+      <div class="t">{{ f['name'] }}{% if selected and selected['food_id'] == f['food_id'] %}
+        <span class="chip on">selected</span>{% endif %}</div>
+      <div class="tm">{{ f['food_group'] }} &middot; {{ f['serving_label'] }}</div>
+    </div>
+    <div class="r">{{ f['energy_kcal']|round|int }} kcal</div>
+  </a>
+  {% else %}
+  <div class="li"><div class="g"><div class="tm">Nothing matched. Try a shorter word.</div></div></div>
+  {% endfor %}
+</div>
+
+{% if selected %}
+{# Serving size and quantity, the calculated panel, then meal and note #}
+<form method="get" class="card">
+  <input type="hidden" name="food_id" value="{{ selected['food_id'] }}">
+  <input type="hidden" name="q" value="{{ q }}">
+  <div class="row">
+    <div>
+      <label>Serving size</label>
+      <div class="chip" style="display:block;padding:9px 10px">{{ selected['serving_label'] }}</div>
+    </div>
+    <div>
+      <label for="quantity">Quantity</label>
+      <input id="quantity" name="quantity" type="number" step="0.25" min="0.25" value="{{ quantity }}">
+    </div>
+  </div>
+  <p class="tm">One unit is {{ selected['serving_label'] }}. Use 0.5 for half, 1.5 for one and a half.</p>
+  <button class="btn s sm" type="submit">Recalculate</button>
+</form>
+
+<div class="card" style="align-items:center">
+  <p class="lbl">Calculated</p>
+  <p class="big">{{ preview.kcal }}</p>
+  <p class="tm">kcal</p>
+  <div class="row" style="width:100%">
+    <div class="stat"><div class="v">{{ preview.carbs_g }} g</div><div class="l">Carbs</div></div>
+    <div class="stat"><div class="v">{{ preview.protein_g }} g</div><div class="l">Protein</div></div>
+    <div class="stat"><div class="v">{{ preview.fat_g }} g</div><div class="l">Fat</div></div>
+  </div>
+</div>
+
+<form method="post" class="card">
+  <input type="hidden" name="food_id" value="{{ selected['food_id'] }}">
+  <input type="hidden" name="quantity" value="{{ quantity }}">
+
+  <div>
+    <label for="category">Meal</label>
+    <select id="category" name="category">
+      {% for c in categories %}
+      <option value="{{ c }}" {{ 'selected' if c == suggested }}>{{ c|capitalize }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <p class="tm">Set automatically from the time below. Change it if it is wrong.</p>
+
+  <div>
+    <label for="eaten_at">Date and time</label>
+    <input id="eaten_at" name="eaten_at" type="datetime-local" value="{{ now }}">
+  </div>
+
+  <div class="between">
+    <h3>Dietary tags</h3>
+    <span class="lbl">Auto</span>
+  </div>
+  <div class="chips">
+    {% for t in tags %}<span class="chip on">{{ t }}</span>
+    {% else %}<span class="chip">none apply at this serving</span>{% endfor %}
+  </div>
+
+  <div>
+    <label for="note">Note</label>
+    <input id="note" name="note" placeholder="Optional, for example: ate half">
+  </div>
+
+  <button type="submit">Add to diary</button>
+</form>
+{% else %}
+<p class="tm">Pick a food above to set the serving size.</p>
+{% endif %}
+{% endblock %}

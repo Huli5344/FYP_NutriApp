@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% set active='profile' %}
+{% block heading %}Create an account{% endblock %}
+{% block content %}
+
+<form method="post">
+  <div class="card">
+    <label class="lbl" for="name">Name</label>
+    <input id="name" name="name" value="{{ name }}" required autofocus>
+
+    <label class="lbl" for="email">Email</label>
+    <input id="email" name="email" type="email" value="{{ email }}" required>
+
+    <label class="lbl" for="password">Password</label>
+    <input id="password" name="password" type="password" minlength="8" required>
+    <div class="tm">At least 8 characters.</div>
+  </div>
+  <button type="submit">Create account and continue</button>
+</form>
+
+<a class="btn s" href="{{ url_for('login') }}">I already have an account</a>
+
+<div class="note" style="margin-top:12px">
+  Your password is never stored. What is stored is a slow, salted hash of it,
+  which cannot be reversed. There is no email verification or password reset
+  in this build.
+</div>
+
+{% endblock %}

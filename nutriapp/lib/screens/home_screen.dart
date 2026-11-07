@@ -1,6 +1,7 @@
 /// Home dashboard.
 ///
 /// Answers one question: how much can I still eat today?
+library;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Entry> _entries = [];
   DaySummary? _summary;
+  UserProfile? _profile;
   Recipe? _teaser;
   bool _loading = true;
 
@@ -35,10 +37,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _load() async {
+    // Read on every load rather than once at startup, so an edit made on the
+    // Profile tab is reflected the next time this screen is shown.
+    final profile =
+        await LocalDb.instance.loadProfile() ?? UserProfile.fallback;
     final entries = await LocalDb.instance.entriesForDay(DateTime.now());
-    final summary = summariseDay(entries, Profile.dailyTarget);
+    final summary = summariseDay(entries, profile.targetKcal,
+        split: macroSplitFor(profile.goal));
     if (!mounted) return;
     setState(() {
+      _profile = profile;
       _entries = entries;
       _summary = summary;
       _loading = false;
@@ -48,11 +56,11 @@ class _HomeScreenState extends State<HomeScreen> {
     // take the dashboard down with it.
     final meal = categoriseByTime(DateTime.now());
     final left = remainingForMeal(summary, meal);
-    final result = await Api.instance.recommendations(Profile.dietType);
+    final result = await Api.instance.recommendations(profile.dietType);
     final picks = recommend(
       result.recipes,
-      Profile.allergens,
-      Profile.dietType,
+      profile.allergens,
+      profile.dietType,
       left == 0 ? 600 : left,
       limit: 1,
     );
@@ -67,16 +75,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading || _summary == null) {
+    if (_loading || _summary == null || _profile == null) {
       return const Center(child: CircularProgressIndicator());
     }
     final s = _summary!;
+    final profile = _profile!;
     final meal = categoriseByTime(DateTime.now());
     final left = remainingForMeal(s, meal);
+    final firstName = profile.name.split(' ').first;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Today, ${DateFormat('d MMM').format(DateTime.now())}'),
+        title: Text('$firstName · '
+            '${DateFormat('d MMM').format(DateTime.now())}'),
         actions: [
           TextButton(
             onPressed: _reset,
@@ -180,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Recommended for $meal', style: tHead),
-                    Chip_('about $left kcal'),
+                    WireChip('about $left kcal'),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -196,7 +207,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           context,
                           MaterialPageRoute(
                               builder: (_) => RecipeDetailScreen(
-                                  recipe: _teaser!, slot: meal)));
+                                  recipe: _teaser!,
+                                  slot: meal,
+                                  profile: profile)));
                       _load();
                     },
                   )
@@ -212,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         context,
                         MaterialPageRoute(
                             builder: (_) => DiscoverScreen(slot: meal)));
-                    _load();
+                    if (mounted) _load();
                   },
                 ),
               ],

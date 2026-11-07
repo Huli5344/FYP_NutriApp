@@ -3,6 +3,7 @@
 /// Opens with three and reveals five more on request. The reveal appends
 /// rather than reshuffles: ranking is deterministic for the same inputs, so
 /// the first three stay where they were and the next five appear below.
+library;
 
 import 'package:flutter/material.dart';
 
@@ -24,6 +25,7 @@ class DiscoverScreen extends StatefulWidget {
 class _DiscoverScreenState extends State<DiscoverScreen> {
   List<Recipe> _pool = [];
   List<Recipe> _ranked = [];
+  UserProfile? _profile;
   RecipeOrigin _origin = RecipeOrigin.local;
   String? _warning;
   bool _expanded = false;
@@ -41,18 +43,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Future<void> _load({bool refresh = false}) async {
     setState(() => _loading = true);
 
+    final profile =
+        await LocalDb.instance.loadProfile() ?? UserProfile.fallback;
     final entries = await LocalDb.instance.entriesForDay(DateTime.now());
-    final summary = summariseDay(entries, Profile.dailyTarget);
+    final summary = summariseDay(entries, profile.targetKcal,
+        split: macroSplitFor(profile.goal));
     final left = remainingForMeal(summary, _slot);
 
-    final result = await Api.instance.recommendations(Profile.dietType);
+    final result = await Api.instance.recommendations(profile.dietType);
     final recent =
         refresh ? await LocalDb.instance.recentlyShown() : <String>{};
 
     final ranked = recommend(
       result.recipes,
-      Profile.allergens,
-      Profile.dietType,
+      profile.allergens,
+      profile.dietType,
       left == 0 ? 600 : left,
       recentIds: recent,
       limit: shownExpanded,
@@ -64,6 +69,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
     if (!mounted) return;
     setState(() {
+      _profile = profile;
       _pool = result.recipes;
       _ranked = ranked;
       _origin = result.origin;
@@ -75,15 +81,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    if (_loading || _profile == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final profile = _profile!;
     final visible =
         _ranked.take(_expanded ? shownExpanded : shownInitially).toList();
     final moreAvailable = _ranked.length - visible.length;
     final hidden =
-        _pool.where((r) => !isSafeFor(r, Profile.allergens)).length;
+        _pool.where((r) => !isSafeFor(r, profile.allergens)).length;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Discover')),
@@ -96,13 +103,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               Expanded(
                 child: Text('For $_slot, about $_slotLeft kcal', style: tHead),
               ),
-              Chip_('${visible.length} shown'),
+              WireChip('${visible.length} shown'),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Chip_(
+              WireChip(
                 _origin == RecipeOrigin.api
                     ? 'Live from the recipe service'
                     : 'Offline meals',
@@ -115,12 +122,26 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             WireNote(_warning!, warning: true),
           ],
           const SizedBox(height: 8),
-          WireNote(
-            '${capitalise(Profile.allergens.join(' and '))} are excluded from '
-            'everything you see here. $hidden '
-            '${hidden == 1 ? 'meal' : 'meals'} hidden.',
-            warning: true,
-          ),
+          // Reads back the labels the user chose, not the internal tokens:
+          // someone who ticked "Dairy" should not be told about "milk".
+          if (profile.restrictions.isNotEmpty)
+            WireNote(
+              '${_listPhrase(profile.restrictions)} '
+              '${profile.restrictions.length == 1 ? 'is' : 'are'} excluded from '
+              'everything you see here. $hidden '
+              '${hidden == 1 ? 'meal' : 'meals'} hidden.',
+              warning: true,
+            )
+          else
+            const WireNote(
+              'You have no dietary restrictions recorded, so nothing is being '
+              'filtered out. Add them on the Profile tab.',
+            ),
+          if (profile.dietType != 'balanced') ...[
+            const SizedBox(height: 8),
+            WireNote('Matched against your ${profile.dietType.replaceAll('-', ' ')} '
+                'preference.'),
+          ],
           const SizedBox(height: 10),
           for (var i = 0; i < visible.length; i++) ...[
             if (i == shownInitially) ...[
@@ -181,13 +202,20 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     );
   }
 
+  /// "Dairy", "Dairy and Eggs", "Dairy, Eggs and Peanuts".
+  static String _listPhrase(List<String> items) {
+    if (items.length == 1) return items.first;
+    return '${items.sublist(0, items.length - 1).join(', ')} and ${items.last}';
+  }
+
   Widget _recipeCard(Recipe r) {
     return WireCard(
       onTap: () async {
         await Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => RecipeDetailScreen(recipe: r, slot: _slot)));
+                builder: (_) => RecipeDetailScreen(
+                    recipe: r, slot: _slot, profile: _profile!)));
         if (mounted) _load();
       },
       child: Column(
@@ -209,8 +237,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              for (final d in r.dietTypes) Chip_(capitalise(d)),
-              for (final a in r.allergens) Chip_('Lists $a', warning: true),
+              for (final d in r.dietTypes) WireChip(capitalise(d)),
+              for (final a in r.allergens) WireChip('Lists $a', warning: true),
             ],
           ),
         ],

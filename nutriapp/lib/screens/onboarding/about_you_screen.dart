@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 class AboutYouScreen extends StatelessWidget {
   // Controllers received from the parent
+  final TextEditingController nameController;
   final TextEditingController ageController;
   final TextEditingController heightController;
   final TextEditingController weightController;
@@ -16,6 +17,7 @@ class AboutYouScreen extends StatelessWidget {
 
   const AboutYouScreen({
     super.key,
+    required this.nameController,
     required this.ageController,
     required this.heightController,
     required this.weightController,
@@ -45,6 +47,17 @@ class AboutYouScreen extends StatelessWidget {
         ),
 
         const SizedBox(height: 24),
+
+        TextField(
+          controller: nameController,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+
+        const SizedBox(height: 16),
 
         TextField(
           controller: ageController,

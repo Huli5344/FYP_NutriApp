@@ -1,0 +1,38 @@
+{
+ "meals": [
+  {
+   "idMeal": "52772",
+   "strMeal": "Teriyaki Chicken Casserole",
+   "strCategory": "Chicken",
+   "strArea": "Japanese",
+   "strInstructions": "Preheat oven to 350 F. Spray a 9x13-inch baking pan with non-stick spray. Combine soy sauce, water, brown sugar, ginger and garlic in a small saucepan and cover. Bring to a boil over medium heat.",
+   "strMealThumb": "https://www.themealdb.com/images/media/meals/wvpsxx1468256321.jpg",
+   "strTags": "Meat,Casserole",
+   "strYoutube": "https://www.youtube.com/watch?v=4aZr5hZXP_s",
+   "strIngredient1": "soy sauce",
+   "strIngredient2": "water",
+   "strIngredient3": "brown sugar",
+   "strIngredient4": "ground ginger",
+   "strIngredient5": "minced garlic",
+   "strIngredient6": "cornstarch",
+   "strIngredient7": "chicken breasts",
+   "strIngredient8": "stir-fry vegetables",
+   "strIngredient9": "brown rice",
+   "strIngredient10": "",
+   "strIngredient11": "",
+   "strIngredient12": null,
+   "strMeasure1": "3/4 cup",
+   "strMeasure2": "1/2 cup",
+   "strMeasure3": "1/4 cup",
+   "strMeasure4": "1/2 teaspoon",
+   "strMeasure5": "1/2 teaspoon",
+   "strMeasure6": "4 Tablespoons",
+   "strMeasure7": "2",
+   "strMeasure8": "1 (12 oz.)",
+   "strMeasure9": "3 cups",
+   "strMeasure10": "",
+   "strMeasure11": "",
+   "strMeasure12": null
+  }
+ ]
+}

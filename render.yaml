@@ -1,0 +1,52 @@
+# Render blueprint: the web service only. The database stays on Neon.
+#
+# Deliberately no `databases:` block. Render's free Postgres expires 30 days
+# after it is created and is deleted after a 14-day grace period -- which is
+# inside the two months this has to survive. Neon's free plan does not expire,
+# which is why the data lives there and only the server lives here.
+#
+# Push this file at the repository root and use Render's "New > Blueprint".
+# Everything below is set for you except the two secrets, which Render will
+# prompt for because they are marked sync: false.
+
+services:
+  - type: web
+    name: nutriapp-backend
+    runtime: python
+    plan: free
+    region: singapore
+    # The Flask app is in backend/, not at the repository root.
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Idempotent: CREATE TABLE IF NOT EXISTS throughout, so it is safe on
+    # every deploy. It uses the direct connection, because DDL through Neon's
+    # pooler fails in ways that never mention pooling.
+    #
+    # It creates the schema but does NOT load the 2,692 foods: that is
+    # tools/load_foods.py, which lives outside rootDir and is a one-off you
+    # run from your own machine. See DEPLOY.md.
+    preDeployCommand: python -c "import database; database.init()"
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --access-logfile -
+
+    # Render pings this itself after a deploy. It must be the endpoint that
+    # touches no database -- see DB_FREE_ENDPOINTS in app.py. Pointed at
+    # /api/health instead, routine health checks would keep Neon's compute
+    # awake and exhaust the monthly allowance before the month ended.
+    healthCheckPath: /api/ping
+
+    envVars:
+      # Flask session signing. Without it, anyone can forge a session cookie
+      # and sign in as any user. generateValue makes Render invent one and
+      # keep it; never commit a value here.
+      - key: SECRET_KEY
+        generateValue: true
+
+      # From `neon env pull`, or Neon's Connect dialog. Pooled for the app,
+      # direct for migrations. They are not interchangeable.
+      - key: DATABASE_URL
+        sync: false            # the POOLED string (hostname has -pooler)
+      - key: DATABASE_URL_UNPOOLED
+        sync: false            # the DIRECT string (hostname has no -pooler)
+
+      - key: PYTHON_VERSION
+        value: "3.12"

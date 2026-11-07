@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% set active='home' %}
+{% block heading %}Today, {{ today.strftime('%d %b') }}{% endblock %}
+{% block headright %}<a class="act" href="{{ url_for('reset') }}">Reset</a>{% endblock %}
+{% block content %}
+
+{# Remaining calories on the left, the day's figures on the right #}
+<div class="card">
+  <div class="between">
+    <div>
+      <p class="big">{{ summary.remaining }}</p>
+      <p class="tm">{{ 'over your target of' if summary.over else 'left of' }} {{ summary.target }}</p>
+    </div>
+    <div style="text-align:right">
+      <p class="tm">Eaten {{ summary.eaten }}</p>
+      <p class="tm">Target {{ summary.target }}</p>
+      <p class="tm">{{ summary.entry_count }} entr{{ 'y' if summary.entry_count == 1 else 'ies' }}</p>
+    </div>
+  </div>
+  <div class="bar {{ 'over' if summary.over }}"><span style="width:{{ summary.percent }}%"></span></div>
+  <p class="tm">Protein {{ summary.macros.protein_g|round|int }} / {{ summary.macro_targets.protein_g }} g
+    &middot; Carbs {{ summary.macros.carbs_g|round|int }} / {{ summary.macro_targets.carbs_g }} g
+    &middot; Fat {{ summary.macros.fat_g|round|int }} / {{ summary.macro_targets.fat_g }} g</p>
+</div>
+
+<div class="between">
+  <h3>Today's meals</h3>
+  <a class="small muted" href="{{ url_for('diary') }}">See diary</a>
+</div>
+<div class="card" style="padding:0 10px">
+  {% for meal, allowance in summary.allowances.items() %}
+  <div class="li">
+    <div class="g">
+      <div class="t">{{ meal|capitalize }}</div>
+      <div class="tm">
+        {%- set items = by_meal.get(meal, []) -%}
+        {%- if items %}{{ items|map(attribute='food_name')|join(', ') }}
+        {%- else %}Not logged yet{% endif -%}
+      </div>
+    </div>
+    <div class="r">
+      {%- if by_meal.get(meal) %}{{ summary.by_category.get(meal, 0) }}
+      {%- else %}{{ allowance }} left{% endif -%}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# The recommendation teaser, carrying the same daily counter as Discover #}
+<div class="card">
+  <div class="between">
+    <h3>Recommended for {{ next_meal }}</h3>
+    <span class="chip">about {{ next_meal_left }} kcal</span>
+  </div>
+  {% if teaser %}
+  <a class="li" href="{{ url_for('recipe_detail', recipe_id=teaser.id, slot=next_meal) }}">
+    <div class="box" style="width:48px;height:48px">Img</div>
+    <div class="g">
+      <div class="t">{{ teaser.name }}</div>
+      <div class="tm">{{ teaser.kcal }} kcal{% if teaser.estimated %}*{% endif %},
+        {{ teaser.protein_g }} g protein{% if profile.restrictions %}, no
+        {{ profile.restrictions|join(' or ')|lower }}{% endif %}</div>
+    </div>
+  </a>
+  {% else %}
+  <p class="tm">No suggestion available. Open Discover to try again.</p>
+  {% endif %}
+  <a class="btn s sm" href="{{ url_for('discover', slot=next_meal) }}">See all suggestions</a>
+</div>
+{% endblock %}
+
+{% block fab %}<a class="fab" href="{{ url_for('add_food') }}" title="Add food">+</a>{% endblock %}

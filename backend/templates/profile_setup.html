@@ -1,0 +1,122 @@
+{% extends "base.html" %}{% set active='profile' %}
+{% block heading %}{{ 'Edit profile' if has_profile else 'Profile setup' }}{% endblock %}
+{% block content %}
+
+{# The web counterpart of the app's five onboarding screens, on one page
+   because a browser has the room for it. The fields and the option lists are
+   the same, and both sides hand their answers to logic.build_profile, so the
+   target and the tokens cannot come out differently. #}
+
+{% if not has_profile %}
+<div class="note">
+  Nothing is measured against a default here. Until this is saved there is no
+  calorie target, so the dashboard, diary and insights have nothing to compare
+  against and will send you back to this page.
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('profile_setup') }}">
+
+  <h3>About you</h3>
+  <div class="card">
+    <label class="lbl" for="name">Name</label>
+    <input id="name" name="name" value="{{ form.name or '' }}" required>
+
+    <label class="lbl" for="age">Age</label>
+    <input id="age" name="age" type="number" min="13" max="120"
+           value="{{ form.age or '' }}" required>
+
+    <label class="lbl" for="gender">Gender (optional)</label>
+    <select id="gender" name="gender">
+      <option value="">Prefer not to say</option>
+      {% for option in genders %}
+      <option value="{{ option }}" {{ 'selected' if form.gender == option }}>{{ option }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="lbl" for="height_cm">Height (cm)</label>
+    <input id="height_cm" name="height_cm" type="number" step="0.1" min="90" max="250"
+           value="{{ form.height_cm or '' }}" required>
+
+    <label class="lbl" for="weight_kg">Current weight (kg)</label>
+    <input id="weight_kg" name="weight_kg" type="number" step="0.1" min="25" max="400"
+           value="{{ form.weight_kg or '' }}" required>
+
+    <label class="lbl" for="activity_level">Activity level</label>
+    <select id="activity_level" name="activity_level">
+      {% for option in activity_levels %}
+      <option value="{{ option }}" {{ 'selected' if form.activity_level == option }}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <h3>Goal</h3>
+  <div class="card">
+    <label class="lbl" for="goal">What are you aiming for?</label>
+    <select id="goal" name="goal">
+      {% for option in goals %}
+      <option value="{{ option }}" {{ 'selected' if form.goal == option }}>{{ option }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="lbl" for="target_weight_kg">Target weight (kg, optional)</label>
+    <input id="target_weight_kg" name="target_weight_kg" type="number" step="0.1"
+           min="25" max="400" value="{{ form.target_weight_kg or '' }}">
+    <div class="tm">Used for the progress figure on Insights. Ignored for
+      "Maintain Weight" and "Eat Healthier".</div>
+
+    <label class="lbl" for="target_kcal">Daily target (kcal, optional)</label>
+    <input id="target_kcal" name="target_kcal" type="number"
+           min="{{ logic.MIN_DAILY_TARGET }}" max="{{ logic.MAX_DAILY_TARGET }}"
+           value="{{ form.target_kcal or '' }}">
+    <div class="tm">Leave empty and it is worked out from your measurements,
+      activity level and goal. Fill it in only if you have been advised a
+      figure.</div>
+  </div>
+
+  <h3>Dietary preferences</h3>
+  <div class="card">
+    <div class="tm">Select all that apply, or none. Every option here matches a
+      tag the recipe data carries, so each one changes what you are shown.</div>
+    <div class="chips" style="margin-top:8px">
+      {% for option in preference_options %}
+      <label class="chip {{ 'on' if option in form.preferences }}">
+        <input type="checkbox" name="preferences" value="{{ option }}"
+               {{ 'checked' if option in form.preferences }}>
+        {{ option }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <h3>Dietary restrictions</h3>
+  <div class="card">
+    <div class="tm">Meals listing any of these are removed before anything is
+      ranked, not merely pushed down the list.</div>
+    <div class="chips" style="margin-top:8px">
+      {% for option in restriction_options %}
+      <label class="chip {{ 'warn' if option in form.restrictions }}">
+        <input type="checkbox" name="restrictions" value="{{ option }}"
+               {{ 'checked' if option in form.restrictions }}>
+        {{ option }}
+      </label>
+      {% endfor %}
+    </div>
+    <div class="note w" style="margin-top:10px">
+      Allergens are worked out by matching ingredient names. TheMealDB is a
+      recipe database, not an allergen certification service, and cannot
+      account for substitutions, undeclared ingredients or
+      cross-contamination. Check the full recipe.
+    </div>
+  </div>
+
+  <button type="submit">
+    {{ 'Save changes' if has_profile else 'Save and continue' }}
+  </button>
+</form>
+
+{% if has_profile %}
+<a class="btn s" href="{{ url_for('profile') }}">Cancel</a>
+{% endif %}
+
+{% endblock %}

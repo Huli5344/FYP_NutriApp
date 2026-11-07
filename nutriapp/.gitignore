@@ -47,17 +47,24 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# Flutter platform folders
-/android/
-/ios/
-/web/
-/windows/
-/linux/
-/macos/
-
-# Flutter configuration and metadata
-/analysis_options.yaml
-/pubspec.lock
+# NOT ignored: /android/, /ios/, /web/, analysis_options.yaml, pubspec.lock.
+#
+# They were excluded here while the project was being worked on in an
+# environment that had no Flutter SDK and therefore none of those files. That
+# was wrong for a real repository:
+#
+#   * android/ holds the manifest -- the INTERNET permission and the cleartext
+#     setting -- and the Gradle config. Excluded, a fresh clone does not build
+#     and those two settings exist only on one laptop.
+#   * analysis_options.yaml configures the linter that `flutter analyze` runs,
+#     so without it the same code reports different problems to different
+#     people.
+#   * pubspec.lock pins the exact dependency versions. Flutter's own guidance
+#     is to commit it for an application, so a build in two months resolves
+#     the same packages as a build today.
+#
+# `flutter create` writes an android/.gitignore of its own which excludes the
+# machine-specific parts (local.properties, the Gradle cache, keystores), so
+# those stay out without keeping the whole folder out.
 /.metadata
 
-/test/widget_test.dart

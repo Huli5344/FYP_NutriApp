@@ -1,0 +1,28 @@
+{
+ "meals": [
+  {
+   "strMeal": "Baked salmon with fennel & tomatoes",
+   "strMealThumb": "https://www.themealdb.com/images/media/meals/1548772327.jpg",
+   "idMeal": "52959",
+   "strArea": "British"
+  },
+  {
+   "strMeal": "Fried calamari",
+   "strMealThumb": "https://www.themealdb.com/images/media/meals/yhi46r1763330279.jpg",
+   "idMeal": "53178",
+   "strArea": "Spanish"
+  },
+  {
+   "strMeal": "Kung Po Prawns",
+   "strMealThumb": "https://www.themealdb.com/images/media/meals/1525873040.jpg",
+   "idMeal": "52946",
+   "strArea": "Chinese"
+  },
+  {
+   "strMeal": "Tuna Nicoise",
+   "strMealThumb": "https://www.themealdb.com/images/media/meals/yypwwq1511304979.jpg",
+   "idMeal": "52852",
+   "strArea": "France"
+  }
+ ]
+}

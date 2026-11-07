@@ -2,6 +2,7 @@
 ///
 /// Search and the serving controls share one screen: a serving size needs a
 /// food to apply to, so the picker sits above and collapses once one is chosen.
+library;
 
 import 'package:flutter/material.dart';
 
@@ -28,11 +29,23 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
   String _category = '';
   DateTime _eatenAt = DateTime.now();
 
+  /// Rises on every keystroke. A response is only applied if its number is
+  /// still the latest, so a slow query for "ric" cannot overwrite the results
+  /// for "rice" typed a moment later.
+  int _searchGeneration = 0;
+
   @override
   void initState() {
     super.initState();
-    _results = LocalDb.instance.searchFoods('');
     _category = categoriseByTime(_eatenAt);
+    _search('');
+  }
+
+  Future<void> _search(String query) async {
+    final generation = ++_searchGeneration;
+    final results = await LocalDb.instance.searchFoods(query);
+    if (!mounted || generation != _searchGeneration) return;
+    setState(() => _results = results);
   }
 
   @override
@@ -84,9 +97,13 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
       category: _category,
       note: _noteController.text.trim(),
     );
+    final profile =
+        await LocalDb.instance.loadProfile() ?? UserProfile.fallback;
     if (!mounted) return;
-    Navigator.pushReplacement(context,
-        MaterialPageRoute(builder: (_) => SavedScreen(entry: entry)));
+    Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (_) => SavedScreen(entry: entry, profile: profile)));
   }
 
   @override
@@ -104,11 +121,15 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                 TextField(
                   controller: _searchController,
                   decoration: const InputDecoration(
-                      labelText: 'Search foods',
-                      hintText: 'rice, oats, salmon...'),
-                  onChanged: (value) => setState(
-                      () => _results = LocalDb.instance.searchFoods(value)),
+                      labelText: 'Search 2,692 foods',
+                      hintText: 'chicken rice, teh, oats...'),
+                  onChanged: _search,
                 ),
+                const SizedBox(height: 6),
+                const Text(
+                    'Health Promotion Board data, stored on this device, so '
+                    'search works without a connection.',
+                    style: tLabel),
               ],
             ),
           ),
@@ -126,10 +147,14 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                 for (final f in _results)
                   WireRow(
                     title: f.name,
-                    subtitle: '${f.brand ?? 'Generic'} · ${f.serving}',
+                    subtitle: '${f.foodGroup ?? 'Food'} · ${f.serving}',
                     trailing: '${f.perServing.kcal} kcal',
                     last: f == _results.last,
                     onTap: () => setState(() => _selected = f),
+                    // A whole roast turkey is one serving in the source data
+                    // and 4,243 kcal. Worth flagging before it is logged from
+                    // a single tap.
+                    tags: f.bulkServing ? const ['large portion'] : const [],
                   ),
               ],
             ),
@@ -204,7 +229,7 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                   const Text('Meal', style: tLabel),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    value: _category,
+                    initialValue: _category,
                     items: [
                       for (final c in categories)
                         DropdownMenuItem(value: c, child: Text(capitalise(c)))
@@ -237,11 +262,11 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Dietary tags', style: tHead),
-                      const Text('Auto', style: tLabel),
+                      Text('Dietary tags', style: tHead),
+                      Text('Auto', style: tLabel),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -249,10 +274,10 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                     spacing: 6,
                     runSpacing: 6,
                     children: autoTags(preview).isEmpty
-                        ? [const Chip_('none apply at this serving')]
+                        ? [const WireChip('none apply at this serving')]
                         : [
                             for (final t in autoTags(preview))
-                              Chip_(t, filled: true)
+                              WireChip(t, filled: true)
                           ],
                   ),
                   const SizedBox(height: 12),

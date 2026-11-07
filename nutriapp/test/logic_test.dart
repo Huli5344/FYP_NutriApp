@@ -5,10 +5,12 @@
 /// Python ones pass, the two agree.
 ///
 /// Run with: flutter test
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nutriapp_diary/logic.dart';
 import 'package:nutriapp_diary/models.dart';
+import 'package:nutriapp_diary/seed_data.dart';
 
 Nutrition n({int kcal = 0, double carbs = 0, double protein = 0, double fat = 0}) =>
     Nutrition(kcal: kcal, carbsG: carbs, proteinG: protein, fatG: fat);
@@ -223,6 +225,400 @@ void main() {
       final eight = recommend(big, [], 'balanced', 600, limit: shownExpanded);
       expect(eight.take(3).map((r) => r.id).toList(),
           three.map((r) => r.id).toList());
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Goals: turning a profile into a calorie target
+  // -------------------------------------------------------------------------
+  group('Basal metabolic rate', () {
+    test('male matches the published equation', () {
+      // 10(80) + 6.25(180) - 5(30) + 5
+      expect(
+          basalMetabolicRate(
+              age: 30, heightCm: 180, weightKg: 80, gender: 'Male'),
+          1780);
+    });
+
+    test('female matches the published equation', () {
+      // 10(58) + 6.25(163) - 5(23) - 161
+      expect(
+          basalMetabolicRate(
+              age: 23, heightCm: 163, weightKg: 58, gender: 'Female'),
+          1323);
+    });
+
+    test('unstated sex lands between the two', () {
+      final male = basalMetabolicRate(
+          age: 30, heightCm: 170, weightKg: 70, gender: 'Male');
+      final female = basalMetabolicRate(
+          age: 30, heightCm: 170, weightKg: 70, gender: 'Female');
+      final either =
+          basalMetabolicRate(age: 30, heightCm: 170, weightKg: 70);
+      expect(female, lessThan(either));
+      expect(either, lessThan(male));
+    });
+
+    test('an unrecognised gender is treated as unstated', () {
+      expect(
+          basalMetabolicRate(
+              age: 30, heightCm: 170, weightKg: 70, gender: 'Non-binary'),
+          basalMetabolicRate(age: 30, heightCm: 170, weightKg: 70));
+    });
+  });
+
+  group('Daily target', () {
+    int target(
+            {String activity = 'Moderately Active',
+            String goal = 'Maintain Weight',
+            int age = 30,
+            double height = 175,
+            double weight = 75,
+            String? gender}) =>
+        dailyTargetFor(
+            age: age,
+            heightCm: height,
+            weightKg: weight,
+            activityLevel: activity,
+            goal: goal,
+            gender: gender);
+
+    test('activity level raises the target', () {
+      expect(target(activity: 'Very Active'),
+          greaterThan(target(activity: 'Sedentary')));
+    });
+
+    test('losing lowers it and gaining raises it', () {
+      expect(target(goal: 'Lose Weight'), lessThan(target()));
+      expect(target(goal: 'Gain Weight'), greaterThan(target()));
+    });
+
+    test('eat healthier is a maintenance target', () {
+      expect(target(goal: 'Eat Healthier'), target(goal: 'Maintain Weight'));
+    });
+
+    test('a deficit never drops below resting burn', () {
+      // The rule that matters most. A small, sedentary person on a 500 kcal
+      // deficit comes out below what their body uses at rest.
+      final bmr = basalMetabolicRate(
+          age: 25, heightCm: 155, weightKg: 48, gender: 'Female');
+      final result = target(
+          age: 25,
+          height: 155,
+          weight: 48,
+          gender: 'Female',
+          activity: 'Sedentary',
+          goal: 'Lose Weight');
+      expect(result, greaterThanOrEqualTo(bmr));
+    });
+
+    test('the floor applies even to a tiny resting burn', () {
+      expect(
+          target(
+              age: 90,
+              height: 140,
+              weight: 35,
+              gender: 'Female',
+              activity: 'Sedentary',
+              goal: 'Lose Weight'),
+          greaterThanOrEqualTo(minDailyTarget));
+    });
+
+    test('a very large input is capped', () {
+      expect(
+          target(
+              age: 20,
+              height: 220,
+              weight: 250,
+              gender: 'Male',
+              activity: 'Very Active',
+              goal: 'Gain Weight'),
+          lessThanOrEqualTo(maxDailyTarget));
+    });
+
+    test('rounded to ten', () {
+      expect(target() % 10, 0);
+    });
+
+    test('an unknown activity level uses the default', () {
+      expect(target(activity: 'Olympian'),
+          target(activity: 'Moderately Active'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // The translation this whole layer exists for
+  // -------------------------------------------------------------------------
+  group('Label normalisation', () {
+    test('dairy becomes milk', () {
+      expect(normaliseAllergens(['Dairy']), ['milk']);
+    });
+
+    test('plurals become the singular token', () {
+      expect(normaliseAllergens(['Peanuts']), ['peanut']);
+      expect(normaliseAllergens(['Eggs']), ['egg']);
+    });
+
+    test('tree nuts becomes the token the data uses', () {
+      expect(normaliseAllergens(['Tree Nuts']), ['nuts']);
+    });
+
+    test('normalised allergens actually filter', () {
+      const r = Recipe(
+          id: 'r1', name: 'Cheese toast', kcal: 500, carbsG: 40,
+          proteinG: 20, fatG: 25, allergens: ['milk']);
+      expect(isSafeFor(r, normaliseAllergens(['Dairy'])), isFalse);
+      // And the failure mode it replaces: the raw label matches nothing, so
+      // the recipe is wrongly reported as safe.
+      expect(isSafeFor(r, ['Dairy']), isTrue);
+    });
+
+    test('an unknown label is passed through lowercased', () {
+      expect(normaliseAllergens(['Lupin']), ['lupin']);
+    });
+
+    test('results are sorted and deduplicated', () {
+      expect(normaliseAllergens(['Soy', 'Dairy', 'Soy']), ['milk', 'soy']);
+    });
+
+    test('every chip maps onto a token the seed data could carry', () {
+      const known = {
+        'peanut', 'nuts', 'milk', 'egg', 'gluten', 'soy', 'fish',
+        'shellfish', 'sesame'
+      };
+      for (final token in allergenTokens.values) {
+        expect(known, contains(token));
+      }
+    });
+  });
+
+  group('Primary diet type', () {
+    test('no preference is balanced', () {
+      expect(primaryDietType([]), 'balanced');
+    });
+
+    test('the most restrictive preference wins', () {
+      expect(primaryDietType(['High protein', 'Vegan']), 'vegan');
+      expect(primaryDietType(['Low carb', 'Vegetarian']), 'vegetarian');
+    });
+
+    test('every diet token appears in the precedence list', () {
+      // Otherwise a preference could be chosen and never requested.
+      for (final token in dietTokens.values) {
+        expect(dietPrecedence, contains(token));
+      }
+    });
+  });
+
+  group('Build profile', () {
+    UserProfile make({int? manual}) => buildProfile(
+          name: 'Wei Ling',
+          email: 'guest@test.com',
+          age: 23,
+          gender: 'Female',
+          heightCm: 163,
+          weightKg: 58,
+          activityLevel: 'Lightly Active',
+          goal: 'Lose Weight',
+          preferences: const ['Pescatarian'],
+          restrictions: const ['Dairy'],
+          manualTargetKcal: manual,
+        );
+
+    test('raw answers are kept alongside the tokens', () {
+      final p = make();
+      expect(p.restrictions, ['Dairy']);
+      expect(p.allergens, ['milk']);
+    });
+
+    test('the target is calculated', () {
+      final p = make();
+      expect(p.targetKcal, p.computedTargetKcal);
+      expect(p.targetIsManual, isFalse);
+    });
+
+    test('a manual target overrides the calculation without losing it', () {
+      final p = make(manual: 1600);
+      expect(p.targetKcal, 1600);
+      expect(p.targetIsManual, isTrue);
+      expect(p.computedTargetKcal, isNot(1600));
+    });
+
+    test('the diet type is derived from the preferences', () {
+      expect(make().dietType, 'pescatarian');
+    });
+
+    test('a profile survives a round trip through a database row', () {
+      final p = make(manual: 1600);
+      final back = UserProfile.fromRow(p.toRow());
+      expect(back.name, p.name);
+      expect(back.allergens, p.allergens);
+      expect(back.restrictions, p.restrictions);
+      expect(back.targetKcal, p.targetKcal);
+      expect(back.targetIsManual, isTrue);
+      expect(back.heightCm, p.heightCm);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Insights
+  // -------------------------------------------------------------------------
+  group('Insights', () {
+    final today = DateTime(2026, 10, 31, 12);
+
+    Entry on(int daysAgo, int kcal, [String category = 'lunch']) => Entry(
+          id: 'e$daysAgo-$kcal',
+          foodName: 'Test',
+          quantity: 1,
+          serving: '1',
+          kcal: kcal,
+          carbsG: 10,
+          proteinG: 5,
+          fatG: 2,
+          category: category,
+          tags: const [],
+          eatenAt: today.subtract(Duration(days: daysAgo)),
+          updatedAt: today,
+        );
+
+    test('unlogged days are present with zero totals', () {
+      // A gap in a chart and a day at zero must not look identical.
+      final totals = dailyTotals([on(0, 500)], endDay: today, days: 7);
+      expect(totals.length, 7);
+      expect(totals.take(6).map((d) => d.entryCount), everyElement(0));
+      expect(totals.last.kcal, 500);
+    });
+
+    test('entries outside the window are ignored', () {
+      final totals = dailyTotals([on(30, 900)], endDay: today, days: 7);
+      expect(totals.fold<int>(0, (a, d) => a + d.kcal), 0);
+    });
+
+    test('the average is over logged days not the whole window', () {
+      final totals = dailyTotals(
+          [on(0, 2000), on(1, 2000), on(2, 2000)], endDay: today, days: 7);
+      final trend = summariseTrend(totals, 2000);
+      expect(trend.daysLogged, 3);
+      expect(trend.averageKcal, 2000);
+    });
+
+    test('an empty window does not divide by zero', () {
+      final trend = summariseTrend(dailyTotals([], endDay: today), 2000);
+      expect(trend.averageKcal, 0);
+      expect(trend.adherencePercent, 0);
+    });
+
+    test('a day within tolerance counts as on target', () {
+      final trend = summariseTrend(
+          dailyTotals([on(0, 2050)], endDay: today), 2000);
+      expect(trend.daysOnTarget, 1);
+      expect(trend.daysOver, 0);
+    });
+
+    test('the three buckets always sum to the logged days', () {
+      final trend = summariseTrend(
+          dailyTotals([on(0, 1200), on(1, 2000), on(2, 3000)],
+              endDay: today),
+          2000);
+      expect(trend.daysOnTarget + trend.daysOver + trend.daysUnder,
+          trend.daysLogged);
+    });
+
+    test('a streak counts back from the last logged day', () {
+      final totals = dailyTotals([on(0, 500), on(1, 500), on(2, 500)],
+          endDay: today);
+      expect(loggingStreak(totals), 3);
+    });
+
+    test('an unlogged today does not break the streak', () {
+      // Otherwise the streak collapses every morning before breakfast.
+      final totals = dailyTotals([on(1, 500), on(2, 500)], endDay: today);
+      expect(loggingStreak(totals), 2);
+    });
+
+    test('a gap does break the streak', () {
+      final totals =
+          dailyTotals([on(0, 500), on(2, 500), on(3, 500)], endDay: today);
+      expect(loggingStreak(totals), 1);
+    });
+
+    test('category totals sum to the window total', () {
+      final totals = dailyTotals(
+          [on(0, 400, 'breakfast'), on(0, 600, 'lunch'), on(1, 500, 'dinner')],
+          endDay: today);
+      expect(categoryTotals(totals).values.fold<int>(0, (a, b) => a + b), 1500);
+    });
+  });
+
+  group('Weight trend', () {
+    final today = DateTime(2026, 10, 31, 12);
+
+    WeightEntry w(int daysAgo, double kg, {bool deleted = false}) =>
+        WeightEntry(
+          id: 'w$daysAgo',
+          kg: kg,
+          recordedAt: today.subtract(Duration(days: daysAgo)),
+          deleted: deleted,
+          updatedAt: today,
+        );
+
+    test('one measurement is not a trend', () {
+      expect(weightChange([w(0, 70)]), isNull);
+    });
+
+    test('change is measured oldest to newest', () {
+      expect(weightChange([w(0, 68), w(10, 70)]), -2.0);
+    });
+
+    test('deleted measurements are ignored', () {
+      expect(weightChange([w(10, 90, deleted: true), w(1, 70), w(0, 69)]),
+          -1.0);
+    });
+
+    test('progress is a share of the distance to the target', () {
+      expect(progressTowardsTarget([w(10, 70), w(0, 68)], 66), 50);
+    });
+
+    test('moving the wrong way reports zero rather than a negative', () {
+      expect(progressTowardsTarget([w(10, 70), w(0, 72)], 66), 0);
+    });
+
+    test('overshooting the target caps at a hundred', () {
+      expect(progressTowardsTarget([w(10, 70), w(0, 64)], 66), 100);
+    });
+
+    test('no target means no progress figure', () {
+      expect(progressTowardsTarget([w(10, 70), w(0, 68)], null), isNull);
+    });
+  });
+
+  group('Seed data consistency', () {
+    test('every offered preference has offline recipes', () {
+      for (final token in dietTokens.values) {
+        expect(seedRecipes.where((r) => matchesDiet(r, token)), isNotEmpty,
+            reason: 'no offline recipe is tagged $token');
+      }
+    });
+
+    test('every offered preference survives a common allergy', () {
+      // A vegan avoiding gluten must still be offered something.
+      for (final token in dietTokens.values) {
+        expect(recommend(seedRecipes, const ['gluten'], token, 600), isNotEmpty,
+            reason: '$token plus a gluten allergy returns nothing');
+      }
+    });
+
+    test('no vegan recipe lists an animal allergen', () {
+      for (final r in seedRecipes) {
+        if (r.dietTypes.contains('vegan')) {
+          expect(
+              r.allergens
+                  .where((a) => const ['egg', 'milk', 'fish', 'shellfish']
+                      .contains(a)),
+              isEmpty,
+              reason: '${r.name} is vegan but lists an animal allergen');
+        }
+      }
     });
   });
 }

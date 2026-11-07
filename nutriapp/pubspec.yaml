@@ -23,3 +23,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # The Health Promotion Board food table, 2,692 rows, ~1.2 MB. Shipped in
+    # the APK rather than fetched, so food search works with no connection
+    # and costs the hosted database nothing. Read-only: db.dart copies it out
+    # of the bundle on first run, because an asset cannot be opened in place.
+    - assets/foods.db

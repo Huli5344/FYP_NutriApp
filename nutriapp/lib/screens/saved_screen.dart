@@ -2,6 +2,7 @@
 ///
 /// A screen rather than a toast, because the point is that the user can see
 /// the day's figures change without opening the diary.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -14,7 +15,8 @@ import 'edit_entry_screen.dart';
 
 class SavedScreen extends StatefulWidget {
   final Entry entry;
-  const SavedScreen({super.key, required this.entry});
+  final UserProfile profile;
+  const SavedScreen({super.key, required this.entry, required this.profile});
 
   @override
   State<SavedScreen> createState() => _SavedScreenState();
@@ -39,7 +41,8 @@ class _SavedScreenState extends State<SavedScreen> {
     final entries = await LocalDb.instance.entriesForDay(day);
     if (!mounted) return;
     setState(() {
-      _summary = summariseDay(entries, Profile.dailyTarget);
+      _summary = summariseDay(entries, widget.profile.targetKcal,
+          split: macroSplitFor(widget.profile.goal));
       _sameMeal =
           entries.where((e) => e.category == widget.entry.category).toList();
       _loading = false;
@@ -177,11 +180,16 @@ class _SavedScreenState extends State<SavedScreen> {
                   label: 'Adjust the serving',
                   outlined: true,
                   onPressed: () async {
-                    await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => EditEntryScreen(entry: e)));
-                    if (mounted) Navigator.pop(context);
+                    // The navigator is captured before the await rather than
+                    // reaching for `context` after it. Holding a
+                    // BuildContext across an async gap is only safe while the
+                    // widget is still mounted, and by the time the edit
+                    // screen closes this one may not be.
+                    final navigator = Navigator.of(context);
+                    await navigator.push(MaterialPageRoute(
+                        builder: (_) => EditEntryScreen(entry: e)));
+                    if (!mounted) return;
+                    navigator.pop();
                   },
                 ),
               ),

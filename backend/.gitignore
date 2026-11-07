@@ -1,0 +1,7 @@
+
+# Holds the database password and the cookie signing key.
+run.bat
+setup_neon.bat
+module.db
+foods.db-journal
+__pycache__/

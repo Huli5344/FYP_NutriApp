@@ -1,4 +1,5 @@
 /// Today's diary. Entries grouped by meal, with per-meal allowances.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -29,11 +30,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
   }
 
   Future<void> _load() async {
+    final profile =
+        await LocalDb.instance.loadProfile() ?? UserProfile.fallback;
     final entries = await LocalDb.instance.entriesForDay(DateTime.now());
     if (!mounted) return;
     setState(() {
       _entries = entries;
-      _summary = summariseDay(entries, Profile.dailyTarget);
+      _summary = summariseDay(entries, profile.targetKcal,
+          split: macroSplitFor(profile.goal));
       _loading = false;
     });
   }

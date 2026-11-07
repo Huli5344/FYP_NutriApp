@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 class ProfileReviewScreen extends StatelessWidget {
   // Personal details
+  final String name;
   final String age;
   final String? gender;
   final String height;
@@ -14,8 +15,12 @@ class ProfileReviewScreen extends StatelessWidget {
   final List<String> preferences;
   final List<String> restrictions;
 
+  /// The calorie target these answers produce, or null if they are incomplete.
+  final int? dailyTarget;
+
   const ProfileReviewScreen({
     super.key,
+    required this.name,
     required this.age,
     required this.gender,
     required this.height,
@@ -25,6 +30,7 @@ class ProfileReviewScreen extends StatelessWidget {
     required this.targetWeight,
     required this.preferences,
     required this.restrictions,
+    this.dailyTarget,
   });
 
   Widget buildProfileItem(String title, String value) {
@@ -58,6 +64,43 @@ class ProfileReviewScreen extends StatelessWidget {
         const Text('Check your details before finishing.'),
 
         const SizedBox(height: 20),
+
+        // Shown before saving, because the daily target is the one figure
+        // these answers produce that the rest of the app measures against.
+        Card(
+          color: const Color(0xFFE8F5E9),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Your daily calorie target',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(
+                  dailyTarget == null
+                      ? 'Complete your measurements to see this.'
+                      : '$dailyTarget kcal a day',
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  dailyTarget == null
+                      ? ''
+                      : 'Worked out from your measurements and activity level, '
+                          'then adjusted for "$dietaryGoal". You can change it '
+                          'later on the Profile tab.',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        buildProfileItem('Name', name.trim().isEmpty ? 'Not set' : name),
 
         buildProfileItem('Age', age),
 

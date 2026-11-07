@@ -1,0 +1,14 @@
+.neon
+node_modules/
+
+# Written by `neon env pull`: holds the database password and the cookie key.
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+
+# The local SQLite database. Development data, including password hashes for
+# whatever test accounts you made. Not secret, but not worth publishing.
+backend/module.db

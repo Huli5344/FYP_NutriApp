@@ -1,0 +1,89 @@
+{% extends "base.html" %}{% set active='discover' %}
+{% block heading %}Discover{% endblock %}
+{% block content %}
+
+{# Slot and allowance, the exclusion notice, then the suggestion cards.
+   The list opens with three and reveals five more on request. #}
+<div class="between">
+  <h3>For {{ slot }}, about {{ slot_left }} kcal</h3>
+  <span class="chip">{{ picks|length }} shown</span>
+</div>
+
+<div class="between">
+  <span class="chip {{ 'on' if origin == 'api' }}">
+    {% if origin == 'api' %}Live from TheMealDB
+    {% elif origin == 'cache' %}From cache
+    {% else %}Offline meals{% endif %}
+  </span>
+  <a class="small muted" href="{{ url_for('api_status') }}">API status</a>
+</div>
+{% if warning %}<div class="flash warn">{{ warning }}</div>{% endif %}
+
+{# Reads back the labels chosen on the setup form, not the internal tokens:
+   someone who ticked "Dairy" should not be told about "milk". The tokens are
+   shown on the Profile page, where the translation is the point. #}
+{% if profile.restrictions %}
+<div class="note w">
+  {{ profile.restrictions|join(' and ') }}
+  {{ 'is' if profile.restrictions|length == 1 else 'are' }} excluded from
+  everything you see here.
+  {{ hidden|length }} meal{{ '' if hidden|length == 1 else 's' }} hidden.
+</div>
+{% else %}
+<div class="note">You have no dietary restrictions recorded, so nothing is being
+filtered out. Add them on the <a href="{{ url_for('profile_setup') }}">Profile</a>
+page.</div>
+{% endif %}
+{% if profile.diet_type != 'balanced' %}
+<div class="note">Matched against your
+  {{ profile.diet_type|replace('-', ' ') }} preference.
+  {%- if profile.diet_type == 'halal' %} Worked out from ingredient names:
+  nothing in the listed ingredients rules these out, which is not the same as
+  certification.{% endif %}
+</div>
+{% endif %}
+
+{% for r in picks %}
+  {% if loop.index0 == first_batch %}
+  {# Anchor for the reveal, so the new items are in view rather than off-screen #}
+  <div class="between" id="more">
+    <h3>More suggestions</h3>
+    <span class="tm">{{ picks|length - first_batch }} more</span>
+  </div>
+  {% endif %}
+<a class="card" href="{{ url_for('recipe_detail', recipe_id=r.id, slot=slot) }}"
+   style="text-decoration:none;color:inherit">
+  <div class="box" style="height:78px">Meal photo</div>
+  <p class="t"><b>{{ r.name }}</b></p>
+  <p class="tm">{{ r.kcal }} kcal{% if r.estimated %}*{% endif %},
+    {{ r.protein_g }} g protein{% if r.minutes %}, {{ r.minutes }} min{% endif %}
+    {%- if r.area %}, {{ r.area }}{% endif %}</p>
+  <div class="chips">
+    {% for d in r.diet_types %}<span class="chip">{{ d|capitalize }}</span>{% endfor %}
+    {% for a in r.allergens %}<span class="chip warn">Lists {{ a }}</span>{% endfor %}
+  </div>
+</a>
+{% else %}
+<div class="card"><p class="tm">Nothing matched your diet type and allergies.</p></div>
+{% endfor %}
+
+{% if more_available %}
+<a class="btn" href="{{ url_for('discover', slot=slot, more=1) }}#more">
+  Show me more ({{ more_available }} more)</a>
+{% elif expanded %}
+<p class="tm">That is all {{ picks|length }} suggestions for {{ slot }}.
+Refresh for a different set.</p>
+{% endif %}
+
+<div class="row">
+  <a class="btn s" href="{{ url_for('discover', slot=slot, refresh=1, more=1 if expanded else None) }}">Refresh</a>
+  <a class="btn s" href="{{ url_for('dashboard') }}">Not now</a>
+</div>
+
+<p class="tm">Ranked by how close each meal lands to the calories left for {{ slot }},
+with recently shown meals pushed down after a refresh.</p>
+{% if picks and picks[0].estimated %}
+<p class="tm">* Calories are estimated from the ingredient list.</p>
+{% endif %}
+<p class="tm">{{ attribution }}</p>
+{% endblock %}

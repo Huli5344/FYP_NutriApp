@@ -1,0 +1,168 @@
+{% extends "base.html" %}{% set active='insights' %}
+{% block heading %}Insights{% endblock %}
+{% block content %}
+
+{# Charts are divs with widths, not an image and not a charting library. The
+   wireframes call for flat bars and hairlines, and the shapes needed here are
+   a bar column and a stacked bar. All the arithmetic is in logic.py; the
+   template only places what it is handed. #}
+
+<div class="chips">
+  {% for option in windows %}
+  <a class="chip {{ 'on' if days == option }}"
+     href="{{ url_for('insights', days=option) }}">{{ option }} days</a>
+  {% endfor %}
+</div>
+
+{% if trend.days_logged == 0 %}
+<div class="note" style="margin-top:10px">
+  Nothing logged in this period yet. Add a meal and the charts here will fill
+  in.
+</div>
+{% else %}
+
+<div class="card">
+  <div class="between">
+    <div>
+      <div class="big">{{ trend.average_kcal }}</div>
+      <div class="tm">average a day, against {{ trend.target }}</div>
+    </div>
+    <div style="text-align:right">
+      {% set diff = trend.average_kcal - trend.target %}
+      <div class="t">
+        {% if diff == 0 %}On target
+        {% else %}{{ diff|abs }} {{ 'over' if diff > 0 else 'under' }}{% endif %}
+      </div>
+      <div class="tm">Highest {{ trend.highest }}</div>
+      <div class="tm">Lowest {{ trend.lowest }}</div>
+    </div>
+  </div>
+</div>
+
+<h3>Calories by day</h3>
+<div class="card">
+  {# The target line sits behind the bars, at its share of the chart height. #}
+  <div class="vbars" style="--target: {{ (trend.target / chart_max * 100)|round(2) }}%">
+    {% for day in totals %}
+    <div class="vbar-slot">
+      <div class="vbar {{ 'over' if day.kcal > trend.target }}"
+           style="height: {{ (day.kcal / chart_max * 100)|round(2) }}%"
+           title="{{ day.day.strftime('%d %b') }}: {{ day.kcal }} kcal"></div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="vbar-labels">
+    {% for day in totals %}
+    <span>{{ day.day.strftime('%d/%m') if (loop.index0 % ((totals|length / 7)|round(0, 'ceil')|int) == 0 or loop.last) else '' }}</span>
+    {% endfor %}
+  </div>
+  <div class="tm" style="margin-top:8px">
+    The line is your {{ trend.target }} kcal target. Bars above it are marked.
+  </div>
+</div>
+
+<h3>Consistency</h3>
+<div class="card">
+  <div class="between">
+    <span class="t">{{ trend.adherence_percent }}% on target</span>
+    <span class="tm">{{ trend.streak }} day streak</span>
+  </div>
+  <div class="bar"><span style="width:{{ trend.adherence_percent }}%"></span></div>
+  <div class="row" style="margin-top:10px">
+    <div class="stat"><div class="v">{{ trend.days_logged }}/{{ trend.days }}</div><div class="l">Days logged</div></div>
+    <div class="stat"><div class="v">{{ trend.days_on_target }}</div><div class="l">On target</div></div>
+    <div class="stat"><div class="v">{{ trend.days_over }}</div><div class="l">Over</div></div>
+    <div class="stat"><div class="v">{{ trend.days_under }}</div><div class="l">Under</div></div>
+  </div>
+</div>
+
+<h3>Where your calories come from</h3>
+<div class="card">
+  {# Compared by calories rather than grams: a gram of fat carries more than
+     twice a gram of carbohydrate, so a grams-based bar would make fat look
+     like a smaller share of intake than it is. #}
+  {% set from_carbs = trend.average_macros.carbs_g * 4 %}
+  {% set from_protein = trend.average_macros.protein_g * 4 %}
+  {% set from_fat = trend.average_macros.fat_g * 9 %}
+  {% set macro_total = from_carbs + from_protein + from_fat %}
+  <div class="stack">
+    {% if macro_total > 0 %}
+    <span class="s1" style="width:{{ (from_carbs / macro_total * 100)|round(2) }}%"></span>
+    <span class="s2" style="width:{{ (from_protein / macro_total * 100)|round(2) }}%"></span>
+    <span class="s3" style="width:{{ (from_fat / macro_total * 100)|round(2) }}%"></span>
+    {% endif %}
+  </div>
+  <div style="padding:0 0 0 0">
+    <div class="li"><div class="g"><div class="t">Carbohydrate</div></div>
+      <div class="r">{{ trend.average_macros.carbs_g|round|int }} / {{ trend.macro_targets.carbs_g }} g</div></div>
+    <div class="li"><div class="g"><div class="t">Protein</div></div>
+      <div class="r">{{ trend.average_macros.protein_g|round|int }} / {{ trend.macro_targets.protein_g }} g</div></div>
+    <div class="li"><div class="g"><div class="t">Fat</div></div>
+      <div class="r">{{ trend.average_macros.fat_g|round|int }} / {{ trend.macro_targets.fat_g }} g</div></div>
+  </div>
+</div>
+
+<h3>Calories by meal</h3>
+<div class="card">
+  {% set meal_total = by_category.values()|sum %}
+  <div class="stack">
+    {% if meal_total > 0 %}
+    {% for meal in logic.CATEGORIES %}
+    <span class="s{{ loop.index }}" style="width:{{ (by_category[meal] / meal_total * 100)|round(2) }}%"></span>
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% for meal in logic.CATEGORIES %}
+  <div class="li">
+    <div class="g">
+      <div class="t">{{ meal|capitalize }}</div>
+      <div class="tm">{{ ((by_category[meal] / meal_total * 100)|round|int) if meal_total else 0 }}% of intake</div>
+    </div>
+    <div class="r">{{ by_category[meal] }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h3>Weight</h3>
+<div class="card">
+  {% set live = weights|rejectattr('deleted')|list %}
+  {% if live|length < 2 %}
+  {# Said plainly rather than drawing a single point and calling it a trend. #}
+  <div class="note">
+    Log a second weight to see a trend. You can add one on the Profile page.
+  </div>
+  {% else %}
+  {% set kgs = live|map(attribute='kg')|list %}
+  {% set low = kgs|min %}
+  {% set high = kgs|max %}
+  {% set span = (high - low) if (high - low) > 0.5 else 1.0 %}
+  <div class="vbars">
+    {% for w in live %}
+    <div class="vbar-slot">
+      <div class="vbar" style="height: {{ (((w.kg - low) / span) * 80 + 20)|round(2) }}%"
+           title="{{ w.recorded_at[:10] }}: {{ w.kg }} kg"></div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div class="stat"><div class="v">{{ live[-1].kg }} kg</div><div class="l">Latest</div></div>
+    <div class="stat"><div class="v">{% if weight_change is none %}&mdash;{% else %}{{ '+' if weight_change > 0 }}{{ weight_change }} kg{% endif %}</div><div class="l">Change</div></div>
+    <div class="stat"><div class="v">{% if progress is none %}&mdash;{% else %}{{ progress }}%{% endif %}</div><div class="l">To target</div></div>
+  </div>
+  <div class="tm" style="margin-top:8px">
+    {{ live[0].recorded_at[:10] }} to {{ live[-1].recorded_at[:10] }},
+    {{ live|length }} measurements.
+  </div>
+  {% endif %}
+</div>
+
+<div class="tm" style="margin-top:12px">
+  Averages cover the {{ trend.days_logged }}
+  {{ 'day' if trend.days_logged == 1 else 'days' }} you recorded, not all
+  {{ trend.days }}. A day counts as on target within
+  {{ (logic.ON_TARGET_TOLERANCE * 100)|round|int }}% either side of
+  {{ trend.target }} kcal.
+</div>
+
+{% endblock %}

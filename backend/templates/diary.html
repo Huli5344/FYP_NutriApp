@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% set active='diary' %}
+{% block heading %}Diary{% endblock %}
+{% block content %}
+
+{# Date stepper, day total, then one section per meal category #}
+<div class="between">
+  <span class="muted">&lt;</span>
+  <b>{{ day.strftime('%A %d %B') }}</b>
+  <span class="muted">&gt;</span>
+</div>
+
+<div class="card">
+  <div class="between">
+    <span class="t">{{ summary.eaten }} of {{ summary.target }} kcal</span>
+    <span class="tm">{{ summary.remaining }} {{ 'over' if summary.over else 'left' }}</span>
+  </div>
+  <div class="bar {{ 'over' if summary.over }}"><span style="width:{{ summary.percent }}%"></span></div>
+</div>
+
+{% for meal, items in grouped.items() %}
+<div class="between">
+  <h3>{{ meal|capitalize }}</h3>
+  <span class="tm">{{ summary.by_category.get(meal, 0) }} / {{ summary.allowances[meal] }}</span>
+</div>
+<div class="card" style="padding:0 10px">
+  {% if items %}
+    {% for e in items %}
+    <a class="li" href="{{ url_for('edit_entry', entry_id=e['id']) }}">
+      <div class="g">
+        <div class="t">{{ e['food_name'] }}</div>
+        <div class="tm">
+          {{ e['quantity'] }} &times; {{ e['serving'] }}
+          {%- if e['tags'] %} &middot; {{ e['tags'].replace(',', ', ') }}{% endif %}
+          {%- if e['note'] %} &middot; Note: {{ e['note'] }}{% endif %}
+        </div>
+      </div>
+      <div class="r">{{ e['kcal'] }}</div>
+    </a>
+    {% endfor %}
+  {% else %}
+    <div class="li"><div class="g"><div class="tm">Nothing logged.
+      <a href="{{ url_for('add_food') }}">Add a meal</a> or
+      <a href="{{ url_for('discover', slot=meal) }}">pick a recommendation</a>.</div></div></div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block fab %}<a class="fab" href="{{ url_for('add_food') }}" title="Add food">+</a>{% endblock %}

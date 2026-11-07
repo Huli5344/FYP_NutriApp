@@ -3,6 +3,7 @@
 /// Follows the wireframe pack rather than a finished visual design: flat
 /// surfaces, square corners, hairline borders, a monochrome palette, and grey
 /// placeholder boxes where photography will go.
+library;
 
 import 'package:flutter/material.dart';
 
@@ -163,7 +164,7 @@ class WireRow extends StatelessWidget {
                     child: Wrap(
                       spacing: 6,
                       runSpacing: 4,
-                      children: [for (final t in tags) Chip_(t)],
+                      children: [for (final t in tags) WireChip(t)],
                     ),
                   ),
               ],
@@ -182,13 +183,14 @@ class WireRow extends StatelessWidget {
   }
 }
 
-/// Square-cornered pill. Named with a trailing underscore to avoid clashing
-/// with Flutter's own Chip.
-class Chip_ extends StatelessWidget {
+/// Square-cornered pill. Named WireChip rather than Chip both to avoid
+/// clashing with Flutter's own Chip and to sit with the other widgets here.
+class WireChip extends StatelessWidget {
   final String label;
   final bool filled;
   final bool warning;
-  const Chip_(this.label, {super.key, this.filled = false, this.warning = false});
+  const WireChip(this.label,
+      {super.key, this.filled = false, this.warning = false});
 
   @override
   Widget build(BuildContext context) {
@@ -305,6 +307,262 @@ class Stat extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// Label and value on one line, for the profile summary.
+class WireField extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool last;
+  final VoidCallback? onTap;
+
+  const WireField({
+    super.key,
+    required this.label,
+    required this.value,
+    this.last = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 128, child: Text(label, style: tMute)),
+          Expanded(
+            child: Text(value,
+                style: tBody, textAlign: TextAlign.right),
+          ),
+        ],
+      ),
+    );
+    return onTap == null ? row : InkWell(onTap: onTap, child: row);
+  }
+}
+
+// ---------------------------------------------------------------- charts
+//
+// Drawn by hand rather than with a charting package. Three reasons: the
+// wireframes call for flat bars and hairlines that a chart library would fight,
+// the shapes needed here are a bar column and a line, and adding a dependency
+// for that would mean a package to resolve on every machine that builds this.
+
+/// A column of vertical bars with a target line across them.
+///
+/// Bars are scaled to the tallest value or the target, whichever is larger, so
+/// the target line is always on screen. A day with nothing logged draws as an
+/// empty outline rather than nothing at all, because a gap in a chart and a day
+/// at zero look identical otherwise.
+class WireVBars extends StatelessWidget {
+  final List<double> values;
+  final List<String> labels;
+  final double? target;
+  final double height;
+
+  /// Values above this fraction of the target are drawn in the warning colour.
+  final double overAt;
+
+  const WireVBars({
+    super.key,
+    required this.values,
+    required this.labels,
+    this.target,
+    this.height = 120,
+    this.overAt = 1.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = [
+      ...values,
+      if (target != null) target!,
+      1.0,
+    ].reduce((a, b) => a > b ? a : b);
+
+    return Column(
+      children: [
+        SizedBox(
+          height: height,
+          child: Stack(
+            children: [
+              // Target line, behind the bars.
+              if (target != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: (target! / maxValue) * height,
+                  child: Container(height: 1, color: AppColors.wire2),
+                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (var i = 0; i < values.length; i++)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: _bar(values[i], maxValue),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            for (final label in labels)
+              Expanded(
+                child: Text(label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 9, color: AppColors.mute)),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _bar(double value, double maxValue) {
+    if (value <= 0) {
+      return Container(
+        height: 2,
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.wire2),
+        ),
+      );
+    }
+    final over = target != null && value > target! * overAt;
+    return Container(
+      height: (value / maxValue) * height,
+      color: over ? AppColors.bad : AppColors.wire2,
+    );
+  }
+}
+
+/// A single bar split into segments, for a macro breakdown.
+class WireStackBar extends StatelessWidget {
+  final List<double> parts;
+  final double thickness;
+  const WireStackBar({super.key, required this.parts, this.thickness = 10});
+
+  static const _shades = [
+    AppColors.ink,
+    AppColors.mute,
+    AppColors.wire2,
+    AppColors.wire,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final total = parts.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) {
+      return Container(height: thickness, color: AppColors.wire);
+    }
+    return SizedBox(
+      height: thickness,
+      child: Row(
+        children: [
+          for (var i = 0; i < parts.length; i++)
+            if (parts[i] > 0)
+              Expanded(
+                flex: (parts[i] / total * 1000).round().clamp(1, 1000),
+                child: Container(color: _shades[i % _shades.length]),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A line through a short series of values, for the weight trend.
+class WireSparkline extends StatelessWidget {
+  final List<double> values;
+  final double? marker;
+  final double height;
+
+  const WireSparkline({
+    super.key,
+    required this.values,
+    this.marker,
+    this.height = 70,
+  });
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: height,
+        width: double.infinity,
+        child: CustomPaint(
+          painter: _SparklinePainter(values: values, marker: marker),
+        ),
+      );
+}
+
+class _SparklinePainter extends CustomPainter {
+  final List<double> values;
+  final double? marker;
+
+  _SparklinePainter({required this.values, this.marker});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2) return;
+
+    // The marker is inside the range so a target line cannot fall off the top
+    // or bottom of the box and look as though it is not there.
+    final all = [...values, if (marker != null) marker!];
+    var low = all.reduce((a, b) => a < b ? a : b);
+    var high = all.reduce((a, b) => a > b ? a : b);
+    if (high - low < 0.5) {
+      // A flat series would otherwise divide by nearly zero and spike.
+      low -= 0.5;
+      high += 0.5;
+    }
+    final span = high - low;
+
+    double y(double value) =>
+        size.height - ((value - low) / span) * size.height;
+    double x(int index) =>
+        values.length == 1 ? 0 : (index / (values.length - 1)) * size.width;
+
+    if (marker != null) {
+      final dashed = Paint()
+        ..color = AppColors.wire2
+        ..strokeWidth = 1;
+      final markerY = y(marker!);
+      for (var px = 0.0; px < size.width; px += 6) {
+        canvas.drawLine(
+            Offset(px, markerY), Offset(px + 3, markerY), dashed);
+      }
+    }
+
+    final line = Paint()
+      ..color = AppColors.ink
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    final path = Path()..moveTo(x(0), y(values.first));
+    for (var i = 1; i < values.length; i++) {
+      path.lineTo(x(i), y(values[i]));
+    }
+    canvas.drawPath(path, line);
+
+    final dot = Paint()..color = AppColors.ink;
+    canvas.drawCircle(
+        Offset(x(values.length - 1), y(values.last)), 2.5, dot);
+  }
+
+  @override
+  bool shouldRepaint(_SparklinePainter old) =>
+      old.values != values || old.marker != marker;
 }
 
 String capitalise(String value) =>

@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% set active='diary' %}
+{% block heading %}Diary{% endblock %}
+{% block content %}
+
+{# Confirmation strip with undo, the new remaining figure, before and
+   after, then the meal section the entry landed in #}
+<div class="flash ok">
+  {{ entry['food_name'] }} added to {{ entry['category'] }}.
+  <a href="{{ url_for('undo', entry_id=entry['id']) }}">Undo</a>
+</div>
+
+{% if not is_today %}
+<div class="flash warn">This entry is dated {{ day.strftime('%d %B') }}, so it does not
+affect today's totals. The figures below are for that day.</div>
+{% endif %}
+
+<div class="card">
+  <div class="between">
+    <div>
+      <p class="big">{{ summary.remaining }}</p>
+      <p class="tm">{{ 'over target of' if summary.over else 'left of' }} {{ summary.target }}</p>
+    </div>
+    <div style="text-align:right">
+      <p class="tm">Was {{ before }} left</p>
+      <p class="t"><b>Now {{ summary.remaining }} {{ 'over' if summary.over else 'left' }}</b></p>
+      <p class="tm">{{ entry['category']|capitalize }}
+        {{ summary.by_category.get(entry['category'], 0) }} of
+        {{ summary.allowances[entry['category']] }} kcal</p>
+    </div>
+  </div>
+  <div class="bar {{ 'over' if summary.over }}"><span style="width:{{ summary.percent }}%"></span></div>
+</div>
+
+<div class="between">
+  <h3>{{ entry['category']|capitalize }}</h3>
+  <span class="tm">{{ summary.by_category.get(entry['category'], 0) }} /
+    {{ summary.allowances[entry['category']] }}</span>
+</div>
+<div class="card" style="padding:0 10px">
+  {% for e in same_meal %}
+  <a class="li" href="{{ url_for('edit_entry', entry_id=e['id']) }}">
+    <div class="g">
+      <div class="t">{{ e['food_name'] }}</div>
+      <div class="tm">{{ e['note'] or (e['quantity'] ~ ' × ' ~ e['serving']) }}</div>
+    </div>
+    <div class="r">{{ e['kcal'] }}</div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="row">
+  <a class="btn s" href="{{ url_for('edit_entry', entry_id=entry['id']) }}">Adjust the serving</a>
+  <a class="btn s" href="{{ url_for('discover') }}">Back to Discover</a>
+</div>
+<a class="btn g sm" href="{{ url_for('dashboard') }}">Back to Home</a>
+{% endblock %}

@@ -1,0 +1,176 @@
+/* Nutri App — Diary and Recommendations module.
+
+   Styled to follow the wireframe pack rather than a finished visual design:
+   flat surfaces, square corners, hairline borders, a monochrome palette, grey
+   placeholder boxes where imagery will go, a simulated status bar and the
+   five-tab bar from the frames.
+
+   Two deliberate departures, because this is a working application and the
+   frames are not:
+     - type is a few points larger than the frames, which are drawn at 300 px
+       wide; at real device width the frame sizes are too small to read;
+     - inputs, buttons and rows are given real tap targets and focus states.
+   Everything else follows the frames. */
+
+:root{
+  --ink:#20252A;
+  --mute:#6B747C;
+  --line:#C9CFC9;      /* hairline between rows */
+  --wire:#DDE1DD;      /* filled placeholder */
+  --wire2:#C5CBC5;     /* placeholder border, bar fill */
+  --surface:#fff;
+  --warn:#8A5A2B;
+  --bad:#A33A2E;
+  --tint:#F5F7F5;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:#E4E7E3;
+  color:var(--ink);
+  font:15px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+}
+
+/* ---------------------------------------------------------------- frame */
+.device{
+  max-width:400px;margin:0 auto;min-height:100vh;background:var(--surface);
+  display:flex;flex-direction:column;border-left:1px solid var(--wire2);
+  border-right:1px solid var(--wire2);
+}
+.status{
+  height:24px;background:var(--wire);display:flex;align-items:center;
+  justify-content:space-between;padding:0 12px;font-size:10px;color:var(--mute);
+  flex:none;
+}
+.appbar{
+  min-height:48px;border-bottom:1px solid var(--line);display:flex;
+  align-items:center;gap:10px;padding:0 12px;font-size:15px;font-weight:600;
+  flex:none;background:var(--surface);
+}
+.appbar .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.appbar a.back{color:var(--ink);text-decoration:none;font-size:18px;line-height:1}
+.appbar .act{margin-left:auto;font-size:13px;color:var(--mute);text-decoration:none}
+main{flex:1;padding:12px;display:flex;flex-direction:column;gap:10px;padding-bottom:28px}
+
+/* bottom bar, five destinations as drawn in the frames */
+.tabs{height:56px;border-top:1px solid var(--line);display:flex;flex:none;background:var(--surface)}
+.tabs a,.tabs span{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;font-size:10px;color:var(--mute);text-decoration:none;
+}
+.tabs .sq{width:16px;height:16px;border:1px solid var(--wire2)}
+.tabs .on{color:var(--ink);font-weight:600}
+.tabs .on .sq{background:var(--wire2)}
+.tabs .off{opacity:.45}
+
+/* floating add control, as drawn on the Home and Diary frames */
+.fab{
+  align-self:flex-end;width:52px;height:52px;border-radius:50%;background:var(--ink);
+  color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;
+  line-height:1;text-decoration:none;
+}
+
+/* ---------------------------------------------------------------- text */
+h2{font-size:17px;margin:0;font-weight:600}
+h3{font-size:13px;margin:0;font-weight:600}
+p{margin:0}
+.lbl{font-size:11px;color:var(--mute)}
+.t{font-size:13px;line-height:1.4}
+.tm{font-size:12px;color:var(--mute);line-height:1.4}
+.big{font-size:38px;font-weight:600;line-height:1}
+.between{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+
+/* ---------------------------------------------------------------- blocks */
+.card{border:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--surface)}
+.card.flat{background:var(--tint);border-color:var(--tint)}
+.note{border-left:3px solid var(--wire2);background:var(--tint);padding:8px 10px;font-size:12px;color:var(--mute)}
+.note.w{border-left-color:var(--warn);color:var(--warn)}
+.box{background:var(--wire);border:1px solid var(--wire2);display:flex;
+  align-items:center;justify-content:center;color:var(--mute);font-size:11px}
+
+/* list rows, hairline separated as in the frames */
+.li{border-bottom:1px solid var(--line);padding:9px 0;display:flex;align-items:center;
+  gap:10px;text-decoration:none;color:inherit}
+.li:last-child{border-bottom:0}
+.li .g{flex:1;min-width:0}
+.li .r{font-size:13px;color:var(--mute);white-space:nowrap}
+
+.bar{height:8px;background:var(--wire);overflow:hidden}
+.bar span{display:block;height:100%;background:var(--wire2)}
+.bar.over span{background:var(--bad)}
+.stat{text-align:center;flex:1}
+.stat .v{font-size:16px;font-weight:600}
+.stat .l{font-size:10px;color:var(--mute)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--wire2);padding:4px 10px;font-size:11px;color:var(--mute);
+  background:var(--surface);display:inline-block}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip.warn{border-color:var(--warn);color:var(--warn)}
+
+/* ---------------------------------------------------------------- forms */
+label{display:block;font-size:11px;color:var(--mute);margin-bottom:4px}
+input,select,textarea{
+  width:100%;padding:9px 10px;border:1px solid var(--wire2);border-radius:0;
+  font:inherit;font-size:14px;background:#FCFDFC;color:var(--ink);
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--ink);outline-offset:-2px}
+
+button,.btn{
+  display:block;width:100%;padding:11px;border:1px solid var(--ink);
+  background:var(--ink);color:#fff;border-radius:0;font:inherit;font-size:13px;
+  font-weight:600;text-align:center;text-decoration:none;cursor:pointer;
+}
+.btn.s{background:var(--surface);color:var(--ink)}
+.btn.g{background:var(--tint);color:var(--mute);border-color:var(--wire2);font-weight:500}
+.btn.danger{background:var(--surface);color:var(--bad);border-color:var(--bad)}
+.btn.sm{padding:7px 10px;font-size:12px;font-weight:500}
+
+.flash{padding:9px 11px;font-size:12px;border-left:3px solid}
+.flash.ok{background:var(--tint);border-color:var(--ink);color:var(--ink)}
+.flash.error{background:#FBEDEB;border-color:var(--bad);color:#7A2A20}
+.flash.warn{background:#FBF3E7;border-color:var(--warn);color:#6B4520}
+
+a{color:var(--ink)}
+.muted{color:var(--mute)}
+.small{font-size:12px}
+
+/* Charts for the Insights page.
+   Divs with widths and heights rather than a charting library: the wireframes
+   call for flat bars and hairlines, and the only shapes needed are a bar
+   column and a stacked bar. All the arithmetic is done in logic.py, so these
+   rules only place what the template is handed. */
+.vbars{
+  position:relative;display:flex;align-items:flex-end;gap:3px;
+  height:120px;margin-top:4px;
+}
+/* The target line, drawn behind the bars at the height the template sets. */
+.vbars::before{
+  content:"";position:absolute;left:0;right:0;bottom:var(--target,-1px);
+  height:1px;background:var(--wire2);
+}
+.vbar-slot{flex:1;display:flex;align-items:flex-end;height:100%;position:relative}
+.vbar{width:100%;background:var(--wire2);min-height:2px}
+/* A day with nothing logged draws as an outline rather than nothing at all:
+   a gap in a chart and a day at zero would otherwise look identical. */
+.vbar[style*="height: 0.0%"],.vbar[style*="height: 0%"]{
+  background:transparent;border:1px solid var(--wire2);height:2px
+}
+.vbar.over{background:var(--bad)}
+.vbar-labels{display:flex;gap:3px;margin-top:4px}
+.vbar-labels>span{flex:1;text-align:center;font-size:9px;color:var(--mute)}
+
+.stack{display:flex;height:10px;background:var(--wire);margin:4px 0 8px}
+.stack>span{display:block;height:100%}
+.stack .s1{background:var(--ink)}
+.stack .s2{background:var(--mute)}
+.stack .s3{background:var(--wire2)}
+.stack .s4{background:var(--wire)}
+
+/* Checkbox chips on the setup form. The input stays in the document for
+   keyboard and screen-reader use rather than being removed from it. */
+label.chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+label.chip input{width:auto;margin:0;padding:0}

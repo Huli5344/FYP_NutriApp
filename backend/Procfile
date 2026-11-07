@@ -1,0 +1,17 @@
+# How a host should start this app.
+#
+# Not `python app.py`. That calls app.run(debug=True), which is Werkzeug's
+# development server with an interactive debugger attached -- a remote code
+# execution hole on a public URL, and single-threaded besides.
+#
+# --bind 0.0.0.0:$PORT  : the host picks the port and passes it in.
+# --workers 2           : two processes fit comfortably in 512 MB with
+#                         psycopg loaded in each. More would swap.
+# --threads 4           : these requests spend their time waiting on the
+#                         database, not on the CPU, so threads are the cheap
+#                         way to handle a few at once.
+# --timeout 120         : a cold Neon compute adds a few hundred ms, but a
+#                         cold *host* can take a minute; this is the ceiling
+#                         before gunicorn kills its own worker.
+# --access-logfile -    : logs to stdout, which is where a host collects them.
+web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --access-logfile -

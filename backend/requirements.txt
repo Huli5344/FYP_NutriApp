@@ -1,0 +1,10 @@
+flask>=3.0
+
+# Only needed when DATABASE_URL points at Postgres. db.py imports it lazily,
+# so the tests and a local SQLite run work without it installed.
+psycopg[binary]>=3.1
+
+# The production server. `python app.py` runs Werkzeug's development server
+# with debug=True, which must never serve a public URL: it exposes an
+# interactive Python console to anyone who can trigger an exception.
+gunicorn>=21.2

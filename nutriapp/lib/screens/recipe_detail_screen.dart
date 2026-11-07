@@ -1,4 +1,5 @@
 /// Recommendation detail.
+library;
 
 import 'package:flutter/material.dart';
 
@@ -11,7 +12,17 @@ import 'saved_screen.dart';
 class RecipeDetailScreen extends StatefulWidget {
   final Recipe recipe;
   final String slot;
-  const RecipeDetailScreen({super.key, required this.recipe, required this.slot});
+
+  /// Passed in rather than read here, so the allergen check in [build] and the
+  /// one in [_save] cannot be looking at different versions of the profile.
+  final UserProfile profile;
+
+  const RecipeDetailScreen({
+    super.key,
+    required this.recipe,
+    required this.slot,
+    required this.profile,
+  });
 
   @override
   State<RecipeDetailScreen> createState() => _RecipeDetailScreenState();
@@ -21,9 +32,12 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   late String _category = widget.slot;
 
   Future<void> _save() async {
-    // Re-check at the moment of saving. A screen opened before an allergy was
-    // recorded must not be able to write an unsafe entry.
-    if (!isSafeFor(widget.recipe, Profile.allergens)) {
+    // Re-read at the moment of saving. A screen left open while an allergy was
+    // added on another tab must not be able to write an unsafe entry.
+    final current =
+        await LocalDb.instance.loadProfile() ?? widget.profile;
+    if (!isSafeFor(widget.recipe, current.allergens)) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('That meal lists an ingredient you are allergic to. '
             'Not saved.'),
@@ -34,13 +48,16 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         .addRecipeEntry(recipe: widget.recipe, category: _category);
     if (!mounted) return;
     Navigator.pushReplacement(
-        context, MaterialPageRoute(builder: (_) => SavedScreen(entry: entry)));
+        context,
+        MaterialPageRoute(
+            builder: (_) => SavedScreen(entry: entry, profile: current)));
   }
 
   @override
   Widget build(BuildContext context) {
     final r = widget.recipe;
-    final clear = isSafeFor(r, Profile.allergens);
+    final profile = widget.profile;
+    final clear = isSafeFor(r, profile.allergens);
 
     return Scaffold(
       appBar: AppBar(title: Text(r.name)),
@@ -53,7 +70,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: Text('${r.kcal}', style: tBig)),
-              Chip_(
+              WireChip(
                 clear ? 'No recorded allergens listed' : 'Lists an allergen you recorded',
                 filled: clear,
                 warning: !clear,
@@ -94,10 +111,15 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             const SizedBox(height: 10),
             WireNote('Ingredients list: ${r.allergens.join(', ')}.', warning: true),
           ],
-          if (clear) ...[
+          if (clear && profile.restrictions.isNotEmpty) ...[
             const SizedBox(height: 10),
-            WireNote('Checked against your recorded allergens: '
-                'no ${Profile.allergens.join(', no ')}.'),
+            WireNote('Checked against your recorded restrictions: '
+                'no ${profile.restrictions.join(', no ').toLowerCase()}.'),
+          ],
+          if (profile.restrictions.isEmpty) ...[
+            const SizedBox(height: 10),
+            const WireNote('You have no dietary restrictions recorded, so '
+                'nothing was checked. Add them on the Profile tab.'),
           ],
           if (r.estimated) ...[
             const SizedBox(height: 10),
@@ -116,7 +138,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 const Text('Save as', style: tLabel),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
-                  value: _category,
+                  initialValue: _category,
                   items: [
                     for (final c in categories)
                       DropdownMenuItem(value: c, child: Text(capitalise(c)))

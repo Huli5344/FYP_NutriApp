@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% set active='discover' %}
+{% block back %}<a class="back" href="{{ url_for('discover') }}">&larr;</a>{% endblock %}
+{% block heading %}Recipe service{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>Connection</h3>
+  <div class="li"><span class="g">Provider</span><span class="r">TheMealDB</span></div>
+  <div class="li"><span class="g">Status</span>
+    <span class="chip {{ 'on' if enabled else 'warn' }}">{{ 'Enabled' if enabled else 'Switched off' }}</span></div>
+  <p class="tm" style="word-break:break-all">{{ base }}</p>
+  <div class="li"><span class="g">Key</span><span class="r">1 (development)</span></div>
+  <div class="li"><span class="g">Timeout</span><span class="r">{{ timeout }} s</span></div>
+  <a class="btn sec sm" href="{{ url_for('api_status', test=1) }}">Test connection</a>
+</div>
+
+{% if result %}
+<div class="flash {{ 'ok' if result.ok else 'error' }}">
+  {% if result.ok %}Reached TheMealDB in {{ result.ms }} ms. {{ result.detail }}.
+  {% else %}Could not reach TheMealDB after {{ result.ms }} ms. {{ result.detail }}{% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>This session</h3>
+  <div class="li"><span class="g">Calls made</span><span class="r">{{ stats.calls }}</span></div>
+  <div class="li"><span class="g">Served from cache</span><span class="r">{{ stats.cache_hits }}</span></div>
+  <div class="li"><span class="g">Errors</span><span class="r">{{ stats.errors }}</span></div>
+  {% if stats.last_call_ms %}
+  <div class="li"><span class="g">Last response</span><span class="r">{{ stats.last_call_ms }} ms</span></div>
+  <div class="li"><span class="g">Last call</span><span class="r">{{ stats.last_call_at }}</span></div>
+  {% endif %}
+  {% if stats.last_error %}<p class="tm">Last error: {{ stats.last_error }}</p>{% endif %}
+</div>
+
+<div class="card">
+  <h3>Cache</h3>
+  <div class="li"><span class="g">Responses stored</span><span class="r">{{ cached }}</span></div>
+  <div class="li"><span class="g">Expires after</span><span class="r">{{ ttl }} hours</span></div>
+  {% if newest %}<div class="li"><span class="g">Newest entry</span><span class="r">{{ newest[:16] }}</span></div>{% endif %}
+  <a class="btn quiet sm" href="{{ url_for('api_cache_clear') }}">Clear cache</a>
+</div>
+
+<div class="card flat">
+  <h3>Fallback order</h3>
+  <p class="tm">1. TheMealDB, live.</p>
+  <p class="tm">2. Cached responses, if the service cannot be reached.</p>
+  <p class="tm">3. The 25 meals stored with the module, if there is no usable cache.</p>
+  <p class="tm">Run with NUTRIAPP_API=off to force step 3.</p>
+</div>
+<p class="tm">{{ attribution }}</p>
+{% endblock %}
