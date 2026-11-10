@@ -100,9 +100,15 @@
     <div class="r">{{ profile.updated_at[:16]|replace('T', ' ') }}</div></div>
 </div>
 
+{# This used to say accounts were handled by a separate module and that the
+   prototype stored no password. Both became false when real sign-in went in:
+   there is an account, and the server keeps a PBKDF2 digest of the password
+   with a per-user salt. A stale reassurance about security is worse than
+   none, so it says what is actually true now. #}
 <div class="note" style="margin-top:10px">
-  Accounts are handled by a separate module, so this prototype has no sign-in
-  and stores no password.
+  Your password is never stored. The server keeps a slow, salted hash that
+  cannot be reversed. Your diary, profile and weights belong to your account
+  and are not shared with anyone else.
 </div>
 
 <a class="btn danger" href="{{ url_for('reset_everything') }}">Clear everything</a>
