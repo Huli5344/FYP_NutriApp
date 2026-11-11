@@ -1,79 +1,222 @@
 /// Shared styling and the small widgets every screen reuses.
 ///
-/// Follows the wireframe pack rather than a finished visual design: flat
-/// surfaces, square corners, hairline borders, a monochrome palette, and grey
-/// placeholder boxes where photography will go.
+/// The look is a reference publication rather than a fitness app, because
+/// that is what this app actually is: it reports figures the Health Promotion
+/// Board published, keeps their serving text verbatim, flags the servings
+/// that are a whole roast turkey, and hides the nutrients HPB never measured.
+/// Hierarchy comes from size, weight and alignment; rules appear only where
+/// they separate data. There are no shadows and no decorative colour.
+///
+/// Two accents, each meaning exactly one thing: [AppColors.accent] for
+/// interactive and on-track, [AppColors.warn] for over target and for a
+/// portion worth a second look. Anything else is ink, mute or a rule.
+///
+/// Numbers are set with tabular figures wherever they stack in a column, so
+/// 8, 373 and 4,243 line up down a list instead of jittering. It is the
+/// cheapest thing that makes a table of figures look deliberate.
+///
+/// Every widget here keeps the name and constructor it had as a wireframe, so
+/// restyling touched this file and not the twenty screens that use it.
 library;
 
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const ink = Color(0xFF20252A);
-  static const mute = Color(0xFF6B747C);
-  static const line = Color(0xFFC9CFC9);
-  static const wire = Color(0xFFDDE1DD);
-  static const wire2 = Color(0xFFC5CBC5);
+  /// Deep blue-black. Body text and the figures that matter.
+  static const ink = Color(0xFF10232B);
+
+  /// Secondary text: units, captions, labels, explanations.
+  static const mute = Color(0xFF5B6E75);
+
+  /// Hairline between rows and around surfaces.
+  static const line = Color(0xFFDCE3E6);
+
+  /// Empty track behind a bar, and the fill of a placeholder.
+  static const wire = Color(0xFFE3E9EB);
+
+  /// A stronger rule, for an input outline or a divider that has to carry.
+  static const wire2 = Color(0xFFC3CED2);
+
+  /// Cards and sheets.
   static const surface = Color(0xFFFFFFFF);
-  static const warn = Color(0xFF8A5A2B);
-  static const bad = Color(0xFFA33A2E);
-  static const tint = Color(0xFFF5F7F5);
+
+  /// The page behind them. Slightly cool so white surfaces lift off it
+  /// without needing a shadow.
+  static const paper = Color(0xFFF2F5F6);
+
+  /// Interactive, and on track. The only colour that invites a tap.
+  static const accent = Color(0xFF13505B);
+
+  /// Over target, and large portions. Never used decoratively, so its
+  /// appearance always means the same thing.
+  static const warn = Color(0xFFA75B12);
+
+  /// Destructive, and errors.
+  static const bad = Color(0xFF93241F);
+
+  /// A quiet wash for notes and inactive fills.
+  static const tint = Color(0xFFEDF2F3);
 }
 
 ThemeData buildTheme() {
   return ThemeData(
     useMaterial3: true,
-    scaffoldBackgroundColor: AppColors.surface,
+    scaffoldBackgroundColor: AppColors.paper,
     colorScheme: ColorScheme.fromSeed(
-      seedColor: AppColors.ink,
-      primary: AppColors.ink,
+      seedColor: AppColors.accent,
+      primary: AppColors.accent,
       surface: AppColors.surface,
     ),
-    fontFamily: 'Roboto',
+    // Bundled rather than fetched, so a release build works offline and the
+    // first launch has no unstyled moment. Subset to Latin and checked
+    // against every character in the food table: 214 KB for three weights.
+    fontFamily: 'IBMPlexSans',
+    splashFactory: InkSparkle.splashFactory,
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.surface,
       foregroundColor: AppColors.ink,
       elevation: 0,
+      scrolledUnderElevation: 0,
       centerTitle: false,
       titleTextStyle: TextStyle(
+        fontFamily: 'IBMPlexSans',
         color: AppColors.ink,
-        fontSize: 17,
+        fontSize: 20,
         fontWeight: FontWeight.w600,
+        letterSpacing: -0.2,
       ),
       shape: Border(bottom: BorderSide(color: AppColors.line)),
     ),
-    inputDecorationTheme: const InputDecorationTheme(
-      isDense: true,
+    dialogTheme: const DialogThemeData(
+      backgroundColor: AppColors.surface,
+      titleTextStyle: TextStyle(
+        fontFamily: 'IBMPlexSans',
+        fontSize: 19,
+        fontWeight: FontWeight.w600,
+        color: AppColors.ink,
+      ),
+      contentTextStyle: TextStyle(
+        fontFamily: 'IBMPlexSans',
+        fontSize: 15,
+        height: 1.45,
+        color: AppColors.ink,
+      ),
+    ),
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: AppColors.ink,
+      contentTextStyle: TextStyle(
+          fontFamily: 'IBMPlexSans', fontSize: 15, color: Colors.white),
+      behavior: SnackBarBehavior.floating,
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.accent,
+        textStyle: const TextStyle(
+            fontFamily: 'IBMPlexSans', fontSize: 15, fontWeight: FontWeight.w500),
+      ),
+    ),
+    // Styled here so the sign-in and registration forms match the rest
+    // without each screen dressing its own buttons -- which is how one of
+    // them ended up green.
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.accent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        minimumSize: const Size.fromHeight(50),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        textStyle: const TextStyle(
+            fontFamily: 'IBMPlexSans', fontSize: 16, fontWeight: FontWeight.w500),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.ink,
+        minimumSize: const Size.fromHeight(50),
+        side: const BorderSide(color: AppColors.wire2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        textStyle: const TextStyle(
+            fontFamily: 'IBMPlexSans', fontSize: 16, fontWeight: FontWeight.w500),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      isDense: false,
       filled: true,
-      fillColor: Color(0xFFFCFDFC),
-      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      fillColor: AppColors.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.zero,
-        borderSide: BorderSide(color: AppColors.wire2),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.wire2),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.zero,
-        borderSide: BorderSide(color: AppColors.wire2),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.wire2),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.zero,
-        borderSide: BorderSide(color: AppColors.ink, width: 2),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.accent, width: 2),
       ),
-      labelStyle: TextStyle(color: AppColors.mute, fontSize: 12),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.bad),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.bad, width: 2),
+      ),
+      labelStyle: const TextStyle(color: AppColors.mute, fontSize: 15),
+      helperStyle: const TextStyle(color: AppColors.mute, fontSize: 13),
+      hintStyle: const TextStyle(color: Color(0xFF9AA8AD), fontSize: 15),
     ),
   );
 }
 
 // ---------------------------------------------------------------- text
+//
+// Five styles, up from a scale that topped out at 13px. The old sizes were
+// roughly two steps below what a phone needs, which is most of why the app
+// read as unfinished rather than minimal.
+
+/// Figures that stack in a column line up when they are tabular. Pulled out
+/// as a constant because it belongs on every number the eye compares.
+const _figures = [FontFeature.tabularFigures()];
+
+/// The one loud thing on a screen: today's calories, a food's energy.
 const tBig = TextStyle(
-    fontSize: 38, fontWeight: FontWeight.w600, height: 1.0, color: AppColors.ink);
-const tHead = TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.ink);
-const tBody = TextStyle(fontSize: 13, color: AppColors.ink, height: 1.4);
-const tMute = TextStyle(fontSize: 12, color: AppColors.mute, height: 1.4);
-const tLabel = TextStyle(fontSize: 11, color: AppColors.mute);
+  fontSize: 44,
+  fontWeight: FontWeight.w600,
+  height: 1.0,
+  letterSpacing: -1.4,
+  color: AppColors.ink,
+  fontFeatures: _figures,
+);
+
+/// A section heading.
+const tHead = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.1,
+    color: AppColors.ink);
+
+/// Running text and row titles.
+const tBody = TextStyle(fontSize: 15, color: AppColors.ink, height: 1.45);
+
+/// Supporting text: subtitles, units, explanations.
+const tMute = TextStyle(fontSize: 13, color: AppColors.mute, height: 1.45);
+
+/// The smallest label, for a field name above a value.
+const tLabel = TextStyle(fontSize: 12, color: AppColors.mute, height: 1.4);
+
+/// A number meant to be read against other numbers.
+const tFigure = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    color: AppColors.ink,
+    fontFeatures: _figures);
 
 // ---------------------------------------------------------------- blocks
 
-/// Bordered container, the frames' basic grouping.
+/// A white surface on the page. The basic grouping.
 class WireCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
@@ -82,7 +225,7 @@ class WireCard extends StatelessWidget {
   const WireCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(10),
+    this.padding = const EdgeInsets.all(14),
     this.onTap,
   });
 
@@ -93,15 +236,24 @@ class WireCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(6),
         color: AppColors.surface,
       ),
       child: child,
     );
-    return onTap == null ? box : InkWell(onTap: onTap, child: box);
+    if (onTap == null) return box;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: box,
+      ),
+    );
   }
 }
 
-/// Grey placeholder where imagery will go.
+/// Placeholder where imagery will go, for a food group with no picture yet.
 class WireBox extends StatelessWidget {
   final double height;
   final String label;
@@ -113,14 +265,19 @@ class WireBox extends StatelessWidget {
         width: double.infinity,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: AppColors.wire,
-          border: Border.all(color: AppColors.wire2),
+          color: AppColors.tint,
+          border: Border.all(color: AppColors.line),
+          borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(label, style: const TextStyle(fontSize: 11, color: AppColors.mute)),
+        child: Text(label, style: tMute),
       );
 }
 
-/// Hairline-separated list row.
+/// A list row, separated from the next by a hairline.
+///
+/// The trailing text is a figure rather than a caption -- in practice it is
+/// always a calorie count -- so it is set in ink with tabular numerals and
+/// given the same weight as the title.
 class WireRow extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -128,6 +285,10 @@ class WireRow extends StatelessWidget {
   final VoidCallback? onTap;
   final bool last;
   final List<String> tags;
+
+  /// Optional picture on the left, usually a [FoodImage]. Null by default,
+  /// so every existing caller is unaffected.
+  final Widget? leading;
 
   const WireRow({
     super.key,
@@ -137,12 +298,13 @@ class WireRow extends StatelessWidget {
     this.onTap,
     this.last = false,
     this.tags = const [],
+    this.leading,
   });
 
   @override
   Widget build(BuildContext context) {
     final content = Container(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: const EdgeInsets.symmetric(vertical: 13),
       decoration: BoxDecoration(
         border: last
             ? null
@@ -151,16 +313,29 @@ class WireRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (leading != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: leading,
+            ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: tBody),
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 16,
+                        height: 1.3,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.ink)),
                 if (subtitle != null && subtitle!.isNotEmpty)
-                  Text(subtitle!, style: tMute),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(subtitle!, style: tMute),
+                  ),
                 if (tags.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.only(top: 7),
                     child: Wrap(
                       spacing: 6,
                       runSpacing: 4,
@@ -172,19 +347,22 @@ class WireRow extends StatelessWidget {
           ),
           if (trailing != null)
             Padding(
-              padding: const EdgeInsets.only(left: 10),
-              child: Text(trailing!,
-                  style: const TextStyle(fontSize: 13, color: AppColors.mute)),
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(trailing!, style: tFigure),
             ),
         ],
       ),
     );
-    return onTap == null ? content : InkWell(onTap: onTap, child: content);
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(onTap: onTap, child: content),
+    );
   }
 }
 
-/// Square-cornered pill. Named WireChip rather than Chip both to avoid
-/// clashing with Flutter's own Chip and to sit with the other widgets here.
+/// A small pill. Named WireChip rather than Chip both to avoid clashing with
+/// Flutter's own Chip and to sit with the other widgets here.
 class WireChip extends StatelessWidget {
   final String label;
   final bool filled;
@@ -194,38 +372,50 @@ class WireChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final border = warning ? AppColors.warn : (filled ? AppColors.ink : AppColors.wire2);
-    final fg = warning ? AppColors.warn : (filled ? Colors.white : AppColors.mute);
+    final border = warning
+        ? const Color(0xFFE8D3B8)
+        : (filled ? AppColors.accent : AppColors.line);
+    final background = warning
+        ? const Color(0xFFFBF4EA)
+        : (filled ? AppColors.accent : AppColors.surface);
+    final foreground =
+        warning ? AppColors.warn : (filled ? Colors.white : AppColors.mute);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: filled ? AppColors.ink : AppColors.surface,
+        color: background,
         border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(3),
       ),
-      child: Text(label, style: TextStyle(fontSize: 11, color: fg)),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 12.5, fontWeight: FontWeight.w500, color: foreground)),
     );
   }
 }
 
-/// Progress bar. Turns red past the target.
+/// Progress against the day's target.
 class WireBar extends StatelessWidget {
   final int percent;
   final bool over;
   const WireBar({super.key, required this.percent, this.over = false});
 
   @override
-  Widget build(BuildContext context) => Container(
-        height: 8,
-        color: AppColors.wire,
-        child: FractionallySizedBox(
-          alignment: Alignment.centerLeft,
-          widthFactor: (percent / 100).clamp(0.0, 1.0),
-          child: Container(color: over ? AppColors.bad : AppColors.wire2),
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: Container(
+          height: 10,
+          color: AppColors.wire,
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: (percent / 100).clamp(0.0, 1.0),
+            child: Container(color: over ? AppColors.warn : AppColors.accent),
+          ),
         ),
       );
 }
 
-/// Left-ruled note, for explanations and cautions.
+/// A note with a rule down its left edge, for an explanation or a caution.
 class WireNote extends StatelessWidget {
   final String text;
   final bool warning;
@@ -234,23 +424,27 @@ class WireNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
         decoration: BoxDecoration(
-          color: warning ? const Color(0xFFFBF3E7) : AppColors.tint,
+          color: warning ? const Color(0xFFFBF4EA) : AppColors.tint,
+          borderRadius: const BorderRadius.only(
+            topRight: Radius.circular(4),
+            bottomRight: Radius.circular(4),
+          ),
           border: Border(
             left: BorderSide(
-                color: warning ? AppColors.warn : AppColors.wire2, width: 3),
+                color: warning ? AppColors.warn : AppColors.accent, width: 2),
           ),
         ),
         child: Text(text,
             style: TextStyle(
-                fontSize: 12,
-                color: warning ? AppColors.warn : AppColors.mute,
-                height: 1.4)),
+                fontSize: 13,
+                height: 1.5,
+                color: warning ? AppColors.warn : AppColors.mute)),
       );
 }
 
-/// Filled or outlined action.
+/// A full-width action.
 class WireButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -269,20 +463,40 @@ class WireButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = danger ? AppColors.bad : (outlined ? AppColors.ink : Colors.white);
-    final bg = (outlined || danger) ? AppColors.surface : AppColors.ink;
-    final border = danger ? AppColors.bad : AppColors.ink;
-    return SizedBox(
-      width: double.infinity,
-      child: InkWell(
-        onTap: onPressed,
-        child: Container(
-          padding: EdgeInsets.symmetric(vertical: small ? 8 : 12),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: bg, border: Border.all(color: border)),
-          child: Text(label,
-              style: TextStyle(
-                  color: fg, fontSize: small ? 12 : 13, fontWeight: FontWeight.w600)),
+    final disabled = onPressed == null;
+    final foreground = danger
+        ? AppColors.bad
+        : (outlined ? AppColors.ink : Colors.white);
+    final background =
+        (outlined || danger) ? AppColors.surface : AppColors.accent;
+    final border =
+        danger ? AppColors.bad : (outlined ? AppColors.wire2 : AppColors.accent);
+    final radius = BorderRadius.circular(6);
+
+    return Opacity(
+      opacity: disabled ? 0.45 : 1,
+      child: SizedBox(
+        width: double.infinity,
+        child: Material(
+          color: background,
+          borderRadius: radius,
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: radius,
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: small ? 11 : 15),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                border: Border.all(color: border),
+              ),
+              child: Text(label,
+                  style: TextStyle(
+                      color: foreground,
+                      fontSize: small ? 14 : 16,
+                      fontWeight: FontWeight.w500)),
+            ),
+          ),
         ),
       ),
     );
@@ -298,12 +512,16 @@ class Stat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Expanded(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(value,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            Text(label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 10, color: AppColors.mute)),
+                style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.ink,
+                    fontFeatures: _figures)),
+            const SizedBox(height: 1),
+            Text(label, style: tMute),
           ],
         ),
       );
@@ -327,7 +545,7 @@ class WireField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final row = Container(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: const EdgeInsets.symmetric(vertical: 13),
       decoration: BoxDecoration(
         border: last
             ? null
@@ -339,21 +557,31 @@ class WireField extends StatelessWidget {
           SizedBox(width: 128, child: Text(label, style: tMute)),
           Expanded(
             child: Text(value,
-                style: tBody, textAlign: TextAlign.right),
+                style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.ink,
+                    fontFeatures: _figures),
+                textAlign: TextAlign.right),
           ),
         ],
       ),
     );
-    return onTap == null ? row : InkWell(onTap: onTap, child: row);
+    if (onTap == null) return row;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(onTap: onTap, child: row),
+    );
   }
 }
 
 // ---------------------------------------------------------------- charts
 //
 // Drawn by hand rather than with a charting package. Three reasons: the
-// wireframes call for flat bars and hairlines that a chart library would fight,
-// the shapes needed here are a bar column and a line, and adding a dependency
-// for that would mean a package to resolve on every machine that builds this.
+// shapes needed are a bar column and a line, a library would fight the flat
+// treatment used everywhere else, and adding a dependency for that would mean
+// a package to resolve on every machine that builds this.
 
 /// A column of vertical bars with a target line across them.
 ///
@@ -416,7 +644,7 @@ class WireVBars extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Row(
           children: [
             for (final label in labels)
@@ -424,7 +652,7 @@ class WireVBars extends StatelessWidget {
                 child: Text(label,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        fontSize: 9, color: AppColors.mute)),
+                        fontSize: 11, color: AppColors.mute)),
               ),
           ],
         ),
@@ -437,14 +665,18 @@ class WireVBars extends StatelessWidget {
       return Container(
         height: 2,
         decoration: BoxDecoration(
-          border: Border.all(color: AppColors.wire2),
+          color: AppColors.wire,
+          borderRadius: BorderRadius.circular(1),
         ),
       );
     }
     final over = target != null && value > target! * overAt;
     return Container(
       height: (value / maxValue) * height,
-      color: over ? AppColors.bad : AppColors.wire2,
+      decoration: BoxDecoration(
+        color: over ? AppColors.warn : AppColors.accent,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
+      ),
     );
   }
 }
@@ -455,10 +687,12 @@ class WireStackBar extends StatelessWidget {
   final double thickness;
   const WireStackBar({super.key, required this.parts, this.thickness = 10});
 
+  /// Three steps down from the accent, so the segments read as one measure
+  /// split up rather than as three unrelated categories.
   static const _shades = [
-    AppColors.ink,
-    AppColors.mute,
-    AppColors.wire2,
+    AppColors.accent,
+    Color(0xFF4C7F88),
+    Color(0xFF9FBCC1),
     AppColors.wire,
   ];
 
@@ -466,19 +700,25 @@ class WireStackBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = parts.fold<double>(0, (a, b) => a + b);
     if (total <= 0) {
-      return Container(height: thickness, color: AppColors.wire);
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: Container(height: thickness, color: AppColors.wire),
+      );
     }
-    return SizedBox(
-      height: thickness,
-      child: Row(
-        children: [
-          for (var i = 0; i < parts.length; i++)
-            if (parts[i] > 0)
-              Expanded(
-                flex: (parts[i] / total * 1000).round().clamp(1, 1000),
-                child: Container(color: _shades[i % _shades.length]),
-              ),
-        ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(5),
+      child: SizedBox(
+        height: thickness,
+        child: Row(
+          children: [
+            for (var i = 0; i < parts.length; i++)
+              if (parts[i] > 0)
+                Expanded(
+                  flex: (parts[i] / total * 1000).round().clamp(1, 1000),
+                  child: Container(color: _shades[i % _shades.length]),
+                ),
+          ],
+        ),
       ),
     );
   }
@@ -546,8 +786,10 @@ class _SparklinePainter extends CustomPainter {
     }
 
     final line = Paint()
-      ..color = AppColors.ink
-      ..strokeWidth = 1.5
+      ..color = AppColors.accent
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
     final path = Path()..moveTo(x(0), y(values.first));
     for (var i = 1; i < values.length; i++) {
@@ -555,9 +797,9 @@ class _SparklinePainter extends CustomPainter {
     }
     canvas.drawPath(path, line);
 
-    final dot = Paint()..color = AppColors.ink;
+    final dot = Paint()..color = AppColors.accent;
     canvas.drawCircle(
-        Offset(x(values.length - 1), y(values.last)), 2.5, dot);
+        Offset(x(values.length - 1), y(values.last)), 3, dot);
   }
 
   @override
@@ -567,3 +809,95 @@ class _SparklinePainter extends CustomPainter {
 
 String capitalise(String value) =>
     value.isEmpty ? value : value[0].toUpperCase() + value.substring(1);
+
+/// Shown when a food's group has no picture, or it has no group at all.
+const String fallbackFoodImage = 'assets/food_groups/fallback.webp';
+
+/// The picture for a food group.
+///
+/// One image per group, not per food. There are 2,692 foods and 15 groups,
+/// and a generated picture of a named dish is often wrong about the portion
+/// or the preparation -- "without skin" is not something a picture is
+/// careful about. A nutrition app whose photographs contradict its own
+/// figures is worse than one with no photographs. A group image makes no
+/// claim about the specific dish, so it cannot be wrong in that way.
+///
+/// This lives here rather than on Food because it is a presentation
+/// concern: the model knows the group, the interface decides what to draw
+/// for it. Keeping it out of models.dart also means the picture layer can
+/// be added or removed without touching the data layer.
+///
+/// The slug is derived rather than looked up in a table, so adding a group
+/// to the dataset needs only a file with the matching name.
+/// tools/check_food_images.py checks every group has one.
+String foodGroupImage(String? group) {
+  if (group == null || group.trim().isEmpty) return fallbackFoodImage;
+  final slug = group
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  return slug.isEmpty ? fallbackFoodImage : 'assets/food_groups/$slug.webp';
+}
+
+/// A food group's picture.
+///
+/// The files are 1200x675 and shared by every food in a group, so whatever
+/// matters should sit in the middle of the frame: a square thumbnail takes
+/// the centre, a header takes the whole width.
+///
+/// `errorBuilder` is not decoration here. `Image.asset` throws at paint time
+/// when a file is missing, which takes out whichever screen happens to be
+/// showing that food -- during a demonstration, most likely, since that is
+/// when unusual foods get searched for. A group whose image has not been
+/// made yet leaves a quiet placeholder instead, and the app carries on.
+///
+/// `cacheWidth` matters for the list. Without it every row decodes a
+/// 1200-pixel-wide bitmap to paint 56 points of it, and a scroll through
+/// search results holds a dozen of them in memory at once.
+class FoodImage extends StatelessWidget {
+  final String asset;
+  final double width;
+  final double height;
+
+  /// Decode at this width instead of the file's own. Set it to roughly the
+  /// painted width in physical pixels.
+  final int? decodeWidth;
+
+  const FoodImage({
+    super.key,
+    required this.asset,
+    required this.width,
+    required this.height,
+    this.decodeWidth,
+  });
+
+  /// The size used in a search result or diary row.
+  factory FoodImage.thumb(String asset, {Key? key}) => FoodImage(
+        key: key,
+        asset: asset,
+        width: 56,
+        height: 56,
+        decodeWidth: 168,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Image.asset(
+        asset,
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        cacheWidth: decodeWidth,
+        errorBuilder: (context, error, stack) => Container(
+          width: width,
+          height: height,
+          color: AppColors.tint,
+          child: const Icon(Icons.restaurant_outlined,
+              size: 20, color: AppColors.mute),
+        ),
+      ),
+    );
+  }
+}

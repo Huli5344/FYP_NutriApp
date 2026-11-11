@@ -682,7 +682,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         ),
         TextButton(
           onPressed: _submit,
-          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          style: TextButton.styleFrom(foregroundColor: AppColors.bad),
           child: const Text('Delete permanently'),
         ),
       ],

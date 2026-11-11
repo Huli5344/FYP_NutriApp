@@ -30,3 +30,35 @@ flutter:
     # and costs the hosted database nothing. Read-only: db.dart copies it out
     # of the bundle on first run, because an asset cannot be opened in place.
     - assets/foods.db
+
+    # One 1200x675 picture per food group, plus fallback.webp. Commented out
+    # until the files exist: Flutter warns on a declared asset directory that
+    # is not there, and an empty folder does not survive a zip or a git
+    # clone, so declaring it early is a warning on every build for nothing.
+    #
+    # Uncomment the line below once the images are in place. Nothing else
+    # changes -- FoodImage already draws a placeholder for a missing file, so
+    # the app looks the same today and picks the pictures up when they land.
+    # tools/check_food_images.py lists the sixteen filenames needed.
+    #
+    # - assets/food_groups/
+
+  fonts:
+    # IBM Plex Sans, bundled rather than fetched at runtime: a release build
+    # has to work offline, and a font that arrives late gives the first
+    # launch an unstyled moment.
+    #
+    # Subset to Latin, Latin-1 and Latin Extended-A plus the punctuation the
+    # interface uses, then checked against every character in foods.db --
+    # 214 KB for three weights instead of 586 KB. Its figures are the reason
+    # for choosing it: tabular numerals keep a column of calorie counts
+    # aligned, which is most of what makes a table of numbers look
+    # deliberate.
+    - family: IBMPlexSans
+      fonts:
+        - asset: assets/fonts/IBMPlexSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSans-SemiBold.ttf
+          weight: 600

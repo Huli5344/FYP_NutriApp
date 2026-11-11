@@ -183,10 +183,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 24),
 
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
                   onPressed: busy ? null : register,
                   child: Text(busy ? 'Creating...' : 'Create account'),
                 ),

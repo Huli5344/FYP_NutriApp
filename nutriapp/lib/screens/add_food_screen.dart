@@ -146,8 +146,9 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                   ),
                 for (final f in _results)
                   WireRow(
+                    leading: FoodImage.thumb(foodGroupImage(f.foodGroup)),
                     title: f.name,
-                    subtitle: '${f.foodGroup ?? 'Food'} · ${f.serving}',
+                    subtitle: f.serving,
                     trailing: '${f.perServing.kcal} kcal',
                     last: f == _results.last,
                     onTap: () => setState(() => _selected = f),
@@ -165,6 +166,19 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 16:9, the shape the files are made at, so the header
+                  // shows the whole frame rather than a crop of it.
+                  LayoutBuilder(
+                    builder: (context, constraints) => FoodImage(
+                      asset: foodGroupImage(_selected!.foodGroup),
+                      width: constraints.maxWidth,
+                      height: constraints.maxWidth * 9 / 16,
+                      decodeWidth: 1200,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(_selected!.foodGroup ?? 'Food', style: tLabel),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(

@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import '../../db.dart';
 import '../../logic.dart';
 import '../../models.dart';
+import '../../ui.dart';
 import 'about_you_screen.dart';
 import 'dietary_goal_screen.dart';
 import 'dietary_preferences_screen.dart';
@@ -372,8 +373,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   Expanded(
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: AppColors.accent,
                         foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6)),
+                        textStyle: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w500),
                       ),
                       onPressed: _saving ? null : nextPage,
                       child: Text(
