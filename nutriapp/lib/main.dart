@@ -76,7 +76,22 @@ class _StartupGateState extends State<StartupGate> {
       return;
     }
 
-    final profile = await LocalDb.instance.loadProfile();
+    var profile = await LocalDb.instance.loadProfile();
+
+    // A signed-in device with no profile is almost always one that has not
+    // pulled yet rather than a genuinely new account: the profile is on the
+    // server, this copy just has not seen it. Ask before marching someone
+    // through a setup they already did.
+    //
+    // This runs only when the profile is missing, so an ordinary launch pays
+    // nothing for it. It matters because sign-in is not the only way to get
+    // here -- closing the app midway through a restore lands exactly here,
+    // and without this the next launch would offer onboarding instead.
+    if (profile == null) {
+      await Api.instance.sync();
+      profile = await LocalDb.instance.loadProfile();
+    }
+
     _land(profile == null
         ? OnboardingScreen(email: session.email, suggestedName: session.name)
         : const Shell());

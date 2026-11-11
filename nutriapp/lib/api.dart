@@ -18,20 +18,27 @@ import 'session.dart';
 class ApiConfig {
   /// Where the backend is.
   ///
-  /// Override at build time without editing this file:
+  /// The default is the deployed server, so a build with no flags works --
+  /// including one made by somebody who has just cloned the repository and
+  /// has never seen this file. It used to default to a LAN address from the
+  /// machine this was written on, which meant a forgotten flag produced an
+  /// app that silently reached nothing.
   ///
-  ///     flutter run --dart-define=API_BASE=http://192.168.86.29:5000
+  /// Override at build time to point somewhere else:
   ///
-  /// The default is a LAN address, not 10.0.2.2. That emulator-only address
-  /// resolves to nothing on a physical phone, and this project is tested on
-  /// one. Change the default if your router hands out a different address --
-  /// `ipconfig` shows it, next to the Wi-Fi adapter.
+  ///     flutter run --dart-define=API_BASE=http://192.168.1.42:5000
   ///
-  /// Pointing this at a deployed https:// URL needs no other change, and
-  /// removes the need for cleartext traffic in the Android manifest.
+  /// For a laptop on the same Wi-Fi, use its LAN address rather than
+  /// 10.0.2.2 -- that one is emulator-only and resolves to nothing on a
+  /// physical phone. `ipconfig` shows it, next to the Wi-Fi adapter. A plain
+  /// http:// address also needs `usesCleartextTraffic` in the Android
+  /// manifest, which the https:// default does not.
+  ///
+  /// No trailing slash: request paths are appended directly, so one would
+  /// produce `...com//api/login`, which the server answers with a 404.
   static const String baseUrl = String.fromEnvironment(
     'API_BASE',
-    defaultValue: 'http://192.168.86.29:5000',
+    defaultValue: 'https://nutriapp-backend-qqpl.onrender.com',
   );
 
   /// For calls nobody is waiting on.

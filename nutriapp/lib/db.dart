@@ -460,9 +460,7 @@ class LocalDb {
       if (localAt != null && !incomingAt.isAfter(localAt)) return;
     }
 
-    final row = Map<String, Object?>.from(remote)
-      ..remove('server_seq')
-      ..['dirty'] = 0;
+    final row = await _localRow('weights', remote, {'dirty': 0});
     await db.insert('weights', row,
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
@@ -472,6 +470,47 @@ class LocalDb {
   /// Last-write-wins like everything else, but worth stating plainly: a profile
   /// edited on this device and not yet pushed must not be replaced by an older
   /// copy the server still holds.
+  /// Column names of a local table, read from the database and remembered.
+  final Map<String, Set<String>> _columnCache = {};
+
+  Future<Set<String>> _columnsOf(String table) async {
+    final cached = _columnCache[table];
+    if (cached != null) return cached;
+    final db = await database;
+    final info = await db.rawQuery('PRAGMA table_info($table)');
+    final names = {for (final row in info) '${row['name']}'};
+    _columnCache[table] = names;
+    return names;
+  }
+
+  /// Keep only the fields this device actually stores.
+  ///
+  /// The server sends more than the device holds. Every row it returns
+  /// carries `user_id`, because the server stores every account's rows and
+  /// has to say whose each one is, and `server_seq`, which is the server's
+  /// own cursor. The device holds exactly one account's data, so its tables
+  /// have neither column.
+  ///
+  /// Handing sqflite a map with an unknown key throws "no column named
+  /// user_id" -- and because sync() treats any throw as a network failure,
+  /// that exception surfaced to the user as "you appear to be offline".
+  /// Pulling anything from the server therefore never worked, silently, and
+  /// looked like a connection problem for as long as it existed.
+  ///
+  /// Filtering against the real table rather than a hand-written list is
+  /// deliberate: a list would be one more thing to forget to update the next
+  /// time a column is added on either side.
+  Future<Map<String, Object?>> _localRow(
+      String table, Map<String, dynamic> remote,
+      Map<String, Object?> overrides) async {
+    final columns = await _columnsOf(table);
+    return {
+      for (final field in remote.entries)
+        if (columns.contains(field.key)) field.key: field.value,
+      ...overrides,
+    };
+  }
+
   Future<void> applyRemoteProfile(Map<String, dynamic> remote) async {
     final db = await database;
     final incomingAt = DateTime.tryParse('${remote['updated_at']}');
@@ -484,10 +523,8 @@ class LocalDb {
       if (localAt != null && !incomingAt.isAfter(localAt)) return;
     }
 
-    final row = Map<String, Object?>.from(remote)
-      ..remove('server_seq')
-      ..['id'] = UserProfile.rowId
-      ..['dirty'] = 0;
+    final row = await _localRow(
+        'profile', remote, {'id': UserProfile.rowId, 'dirty': 0});
     await db.insert('profile', row,
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
@@ -510,9 +547,7 @@ class LocalDb {
       if (localAt != null && !incomingAt.isAfter(localAt)) return;
     }
 
-    final row = Map<String, Object?>.from(remote)
-      ..remove('server_seq')
-      ..['dirty'] = 0;
+    final row = await _localRow('entries', remote, {'dirty': 0});
     await db.insert('entries', row,
         conflictAlgorithm: ConflictAlgorithm.replace);
   }

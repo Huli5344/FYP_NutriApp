@@ -116,17 +116,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!restored.ok) {
       // Signing in requires the server, so the network was working seconds
-      // ago and this is almost certainly transient. It still must not be
-      // ignored: continuing would show onboarding to someone who already has
-      // a profile, and the profile they typed would then overwrite the real
-      // one on the server, because conflicts are settled by whichever copy
-      // was written last.
+      // ago and a failure here is unlikely to be the connection. It still
+      // must not be ignored: continuing would show onboarding to someone who
+      // already has a profile, and the profile they typed would then
+      // overwrite the real one on the server, because conflicts are settled
+      // by whichever copy was written last.
+      //
+      // The underlying reason is shown rather than hidden behind a guess.
+      // sync() reports every failure as if it were a network problem, which
+      // once turned "no column named user_id" into "you appear to be
+      // offline" and cost two days of looking in the wrong place.
       setState(() {
         busy = false;
         clearSlowHint();
-        error = 'Signed in, but could not reach the server to restore your '
-            'profile. Check your connection and try again -- nothing has '
-            'been changed.';
+        error = 'Signed in, but could not restore your profile from the '
+            'server, so nothing has been changed. Try again in a moment.'
+            '\n\nReason: ${restored.error ?? 'unknown'}';
       });
       return;
     }

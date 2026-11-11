@@ -37,10 +37,29 @@ import sync
 
 app = Flask(__name__)
 
-# A fixed key would let anyone forge a session cookie, so it comes from the
-# environment in deployment. The fallback exists so a local run works out of
-# the box; it is printed as a warning at startup rather than left silent.
-app.secret_key = os.environ.get("SECRET_KEY") or "local-development-key"
+# A fixed key would let anyone forge a session cookie and sign in as any
+# user, so it comes from the environment in deployment. The fallback exists
+# so a local run works out of the box.
+#
+# The guard is here at import, not in the __main__ block below: gunicorn
+# imports this module and never runs that block, so a warning printed there
+# would be invisible in exactly the deployment it was written for. PORT is
+# set by Render, Railway, Heroku and every host of that shape, and is
+# normally unset locally, which makes it a good enough signal that this is
+# not a development machine.
+#
+# Failing the boot is deliberate. Serving with a published key is worse than
+# not serving: it looks like it works, and anyone who reads this file can
+# mint a session for any account.
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY and os.environ.get("PORT"):
+    raise RuntimeError(
+        "SECRET_KEY is not set, and PORT is -- so this looks like a hosting "
+        "platform. Refusing to start: session cookies would be signed with "
+        "a key published in this file, and anyone could forge one and sign "
+        "in as any user. Set SECRET_KEY in the service's environment; "
+        "render.yaml asks Render to generate one.")
+app.secret_key = SECRET_KEY or "local-development-key"
 
 # cache and a local fallback.
 # Set NUTRIAPP_API=off to force the offline path for a demonstration.
