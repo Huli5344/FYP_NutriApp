@@ -225,6 +225,39 @@ class Api {
   /// Called on launch. `unauthorised` means the token has expired or been
   /// revoked; `failed` means the server could not be reached, which is not a
   /// reason to sign anybody out.
+  /// Delete this account and everything in it, permanently.
+  ///
+  /// The password goes with the request even though the token is already in
+  /// the headers: the server re-checks it, because a token on an unlocked
+  /// phone is not proof that the owner is the one tapping, and this action
+  /// has no undo.
+  ///
+  /// Returns null on success, or a message to show the user.
+  Future<String?> deleteAccount(String password) async {
+    try {
+      final response = await _client
+          .post(Uri.parse('${ApiConfig.baseUrl}/api/account/delete'),
+              headers: _headers(json: true),
+              body: jsonEncode({'password': password}))
+          .timeout(ApiConfig.authTimeout, onTimeout: _timeoutResponse);
+
+      if (response.statusCode == 200) return null;
+      if (response.statusCode == _timedOut) return _wakingMessage;
+      if (response.statusCode == 401) {
+        signedOut = true;
+        return 'Your session expired. Sign in again, then try once more.';
+      }
+
+      final body = _decode(response.body);
+      return body['error']?.toString() ?? 'Could not delete the account.';
+    } catch (e) {
+      // Nothing was deleted -- the request never completed -- so it is safe
+      // to say so plainly and let them try again.
+      return 'Could not reach the server, so nothing has been deleted. '
+          'Check your connection and try again.';
+    }
+  }
+
   Future<ApiOutcome> checkSession() async {
     try {
       final response = await _client

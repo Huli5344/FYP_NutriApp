@@ -1302,6 +1302,174 @@ class TestApiNeverRedirectsToHtml(unittest.TestCase):
         self.assertIn("/profile/setup", response.headers["Location"])
 
 
+class TestDeleteAccount(unittest.TestCase):
+    """Deleting an account is the one action with no undo.
+
+    So the tests are mostly about what must NOT happen: no deletion without
+    the password, none with the wrong one, none without a token, and nothing
+    of anyone else's touched when it does go ahead.
+    """
+
+    def setUp(self):
+        import app
+        import database
+        database.init(force=True)
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        self.database = database
+
+    def register(self, email, password="testpass123", name="Person"):
+        body = self.client.post("/api/register", json={
+            "email": email, "password": password, "name": name}).get_json()
+        return body["token"], {"Authorization": f"Bearer {body['token']}"}
+
+    def log_a_meal(self, headers, entry_id):
+        self.client.post("/sync", headers=headers, json={
+            "since": 0, "weights": [], "profile": None, "changes": [{
+                "id": entry_id, "food_id": "F05100112",
+                "food_name": "Chicken rice", "quantity": 1.0,
+                "serving": "1 plate", "kcal": 643, "carbs_g": 84.1,
+                "protein_g": 29.7, "fat_g": 20.9, "category": "lunch",
+                "tags": "", "note": "", "eaten_at": "2026-11-11T12:30:00",
+                "source": "manual", "deleted": 0,
+                "updated_at": "2026-11-11T12:31:00Z"}]})
+
+    def count(self, table, user_id=None):
+        conn = self.database.connect()
+        try:
+            if user_id is None:
+                sql, args = f"SELECT COUNT(*) c FROM {table}", ()
+            else:
+                sql = f"SELECT COUNT(*) c FROM {table} WHERE user_id=?"
+                args = (user_id,)
+            return conn.execute(sql, args).fetchone()["c"]
+        finally:
+            conn.close()
+
+    def user_id_of(self, headers):
+        return self.client.get("/api/me", headers=headers).get_json()["user"]["id"]
+
+    # ---------------------------------------------------------- refusals
+
+    def test_no_token_is_refused(self):
+        self.register("a@test.com")
+        response = self.client.post("/api/account/delete",
+                                    json={"password": "testpass123"})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(self.count("users"), 1)
+
+    def test_missing_password_is_refused(self):
+        _, headers = self.register("a@test.com")
+        response = self.client.post("/api/account/delete", json={},
+                                    headers=headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.count("users"), 1)
+
+    def test_wrong_password_is_refused(self):
+        _, headers = self.register("a@test.com")
+        response = self.client.post("/api/account/delete",
+                                    json={"password": "wrongpass123"},
+                                    headers=headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.count("users"), 1)
+
+    def test_a_refusal_leaves_the_session_working(self):
+        """A mistyped password must not half-delete anything."""
+        _, headers = self.register("a@test.com")
+        self.log_a_meal(headers, "aaaa1111-0000-4000-8000-000000000001")
+        self.client.post("/api/account/delete",
+                         json={"password": "wrongpass123"}, headers=headers)
+        self.assertEqual(self.client.get("/api/me", headers=headers).status_code,
+                         200)
+        self.assertEqual(self.count("entries"), 1)
+
+    # ------------------------------------------------------------ success
+
+    def test_the_account_and_its_rows_are_gone(self):
+        _, headers = self.register("a@test.com")
+        self.log_a_meal(headers, "aaaa1111-0000-4000-8000-000000000001")
+        self.assertEqual(self.count("users"), 1)
+
+        response = self.client.post("/api/account/delete",
+                                    json={"password": "testpass123"},
+                                    headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.count("users"), 0)
+        self.assertEqual(self.count("entries"), 0)
+        self.assertEqual(self.count("sessions"), 0)
+
+    def test_every_device_is_signed_out(self):
+        """Sessions go with the account, so a second phone cannot carry on."""
+        _, phone = self.register("a@test.com")
+        tablet = self.client.post("/api/login", json={
+            "email": "a@test.com", "password": "testpass123"}).get_json()
+        tablet_headers = {"Authorization": f"Bearer {tablet['token']}"}
+        self.assertEqual(
+            self.client.get("/api/me", headers=tablet_headers).status_code, 200)
+
+        self.client.post("/api/account/delete",
+                         json={"password": "testpass123"}, headers=phone)
+
+        self.assertEqual(
+            self.client.get("/api/me", headers=phone).status_code, 401)
+        self.assertEqual(
+            self.client.get("/api/me", headers=tablet_headers).status_code, 401)
+
+    def test_the_email_can_be_used_again(self):
+        _, headers = self.register("a@test.com")
+        self.client.post("/api/account/delete",
+                         json={"password": "testpass123"}, headers=headers)
+        again = self.client.post("/api/register", json={
+            "email": "a@test.com", "password": "different123", "name": "New"})
+        self.assertEqual(again.status_code, 201)
+
+    # -------------------------------------------------- nobody else's data
+
+    def test_another_account_is_untouched(self):
+        """The whole point of the per-user scoping, at its most destructive."""
+        _, mine = self.register("mine@test.com")
+        _, theirs = self.register("theirs@test.com")
+        self.log_a_meal(mine, "aaaa1111-0000-4000-8000-000000000001")
+        self.log_a_meal(theirs, "bbbb2222-0000-4000-8000-000000000002")
+        their_id = self.user_id_of(theirs)
+
+        self.client.post("/api/account/delete",
+                         json={"password": "testpass123"}, headers=mine)
+
+        self.assertEqual(self.count("users"), 1)
+        self.assertEqual(self.count("entries", their_id), 1)
+        self.assertEqual(
+            self.client.get("/api/me", headers=theirs).status_code, 200)
+
+    def test_a_shared_entry_id_does_not_take_the_other_copy(self):
+        """Two accounts can legitimately hold the same entry id.
+
+        Ids are generated on the device, so a collision is possible, and the
+        composite key (user_id, id) is what keeps the rows apart. A delete
+        scoped only by id would take both.
+        """
+        shared = "cccc3333-0000-4000-8000-000000000003"
+        _, mine = self.register("mine@test.com")
+        _, theirs = self.register("theirs@test.com")
+        self.log_a_meal(mine, shared)
+        self.log_a_meal(theirs, shared)
+        their_id = self.user_id_of(theirs)
+
+        self.client.post("/api/account/delete",
+                         json={"password": "testpass123"}, headers=mine)
+
+        self.assertEqual(self.count("entries", their_id), 1)
+
+    def test_it_works_without_a_profile(self):
+        """Someone who abandoned setup must still be able to delete."""
+        _, headers = self.register("a@test.com")
+        response = self.client.post("/api/account/delete",
+                                    json={"password": "testpass123"},
+                                    headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.count("users"), 0)
+
+
 class TestHealthCheckCostsNothing(unittest.TestCase):
     """The keep-warm ping must not open a database connection.
 

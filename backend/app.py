@@ -80,7 +80,10 @@ PUBLIC_ENDPOINTS = {
 # Pages that measure something need a profile to measure against, but must not
 # redirect to the page that creates one.
 SETUP_EXEMPT = PUBLIC_ENDPOINTS | {"profile_setup", "logout", "api_recipes",
-                                   "sync_entries", "api_logout", "api_me"}
+                                   "sync_entries", "api_logout", "api_me",
+                                   # Someone who never finished setup must
+                                   # still be able to delete their account.
+                                   "api_delete_account"}
 
 # Endpoints that must not open a database connection.
 #
@@ -1265,6 +1268,53 @@ def api_logout():
         accounts.revoke_token(conn, g.token)
         conn.commit()
         conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/account/delete", methods=["POST"])
+def api_delete_account():
+    """Delete this account and everything in it. Permanent.
+
+    The password is required again even though the caller already holds a
+    valid token. A token sits on a phone and outlives the moment it was
+    issued: an unlocked handset, or a borrowed one, is enough to use it. For
+    an action with no undo, the thing worth proving is that the person
+    tapping is the person who owns the account, and only the password proves
+    that.
+
+    Order matters. Every one of these tables has a foreign key to users(id),
+    so users goes last; sessions goes just before it, which signs out every
+    other device as a side effect -- correct, since the account they were
+    signed in to no longer exists.
+    """
+    payload = request.get_json(silent=True) or {}
+    password = payload.get("password") or ""
+    if not password:
+        return jsonify({"error": "Enter your password to confirm."}), 400
+
+    conn = database.connect()
+    try:
+        # g.user came from the token; re-read so the hash is current even if
+        # the password was changed on another device since this token was
+        # issued.
+        user = accounts.find_user_by_id(conn, g.user["id"])
+        if user is None:
+            return jsonify({"error": "Account not found."}), 404
+
+        if not accounts.verify_password(password, user["password_hash"]):
+            # Deliberately not "wrong password" versus anything else: this is
+            # the last gate in front of an irreversible action, and it should
+            # say as little as possible about why it refused.
+            return jsonify({"error": "That password is not correct."}), 403
+
+        user_id = user["id"]
+        for table in ("entries", "weights", "shown", "profile", "sessions"):
+            conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
     return jsonify({"ok": True})
 
 

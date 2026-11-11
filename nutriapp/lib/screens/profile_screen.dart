@@ -292,38 +292,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Future<void> _startOver() async {
-    // As in _signOut: taken before the dialog, not after it.
+  /// Delete the account on the server, then this device.
+  ///
+  /// This replaced a "Start over" button that only cleared the phone. That
+  /// was misleading in the one direction that matters: someone pressing it
+  /// to remove their data left the account, the email and every meal sitting
+  /// on the server, and had no way to tell.
+  ///
+  /// The password is asked for again here, and checked again on the server.
+  /// The token already in the headers proves a session, not a person -- an
+  /// unlocked phone is enough to have one -- and this is the last gate in
+  /// front of something with no undo.
+  Future<void> _deleteAccount() async {
     final navigator = Navigator.of(context);
-
-    final confirmed = await showDialog<bool>(
+    final password = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Start over?'),
-        content: const Text(
-            'This clears your profile, your diary and your weight log from '
-            'this device, and returns you to the sign-in screen. It cannot be '
-            'undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Clear everything'),
-          ),
-        ],
-      ),
+      builder: (context) => const _DeleteAccountDialog(),
     );
-    if (confirmed != true) return;
+    if (password == null || password.isEmpty) return;
 
-    await Api.instance.logout();
+    setState(() {
+      _signingOut = true;
+      _syncNote = 'Deleting your account...';
+    });
+
+    final failure = await Api.instance.deleteAccount(password);
+    if (!mounted) return;
+
+    if (failure != null) {
+      setState(() {
+        _signingOut = false;
+        _syncNote = null;
+      });
+      // Nothing was deleted, so the screen stays exactly as it was.
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failure)));
+      return;
+    }
+
+    // The account is gone, so the local copy is now the only trace of it and
+    // has no account to belong to. clear() wipes the diary as well as the
+    // token, which is what is wanted here -- unlike a sign-out, there is
+    // nothing left to sync it back to.
     await SessionStore.instance.clear();
-    await LocalDb.instance.resetEverything();
 
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(
+          notice: 'Your account and everything in it have been deleted. '
+              'You can create a new one with the same email if you want to '
+              'start again.',
+        ),
+      ),
       (route) => false,
     );
   }
@@ -522,10 +542,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onPressed: _signingOut ? null : _signOut),
           const SizedBox(height: 10),
           WireButton(
-              label: 'Start over',
+              label: 'Delete account',
               danger: true,
               small: true,
-              onPressed: _signingOut ? null : _startOver),
+              onPressed: _signingOut ? null : _deleteAccount),
           const SizedBox(height: 80),
         ],
       ),
@@ -593,4 +613,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
       '${(split[0] * 100).round()}% carbs · '
       '${(split[1] * 100).round()}% protein · '
       '${(split[2] * 100).round()}% fat';
+}
+
+/// Asks for the password before deleting an account.
+///
+/// A widget of its own rather than a bare AlertDialog, because it holds a
+/// text field and therefore state, and because the dialog has to dispose its
+/// controller. Pops the typed password, or null if cancelled.
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _controller = TextEditingController();
+  bool _hidden = true;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final password = _controller.text;
+    if (password.isEmpty) return;
+    Navigator.pop(context, password);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Delete account?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'This permanently deletes your account, your diary, your weight '
+            'log and your profile -- from this phone and from the server. '
+            'Any other device signed in to this account is signed out.\n\n'
+            'It cannot be undone. There is no backup.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            obscureText: _hidden,
+            autofocus: true,
+            onSubmitted: (_) => _submit(),
+            decoration: InputDecoration(
+              labelText: 'Confirm your password',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: Icon(
+                    _hidden ? Icons.visibility_off : Icons.visibility),
+                onPressed: () => setState(() => _hidden = !_hidden),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _submit,
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          child: const Text('Delete permanently'),
+        ),
+      ],
+    );
+  }
 }
