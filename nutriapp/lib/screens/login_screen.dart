@@ -97,8 +97,42 @@ class _LoginScreenState extends State<LoginScreen> {
     await SessionStore.instance.save(result.session!);
     Api.instance.signedOut = false;
 
-    // Where to go depends on whether setup has been done. Pushing onboarding
-    // unconditionally would make a returning user re-enter everything.
+    // Pull from the server before deciding where to go.
+    //
+    // Signing out clears this device -- it has to, because the next person to
+    // sign in here may be a different account and the local tables carry no
+    // owner column. So the local profile is *always* absent at this point,
+    // even for someone who set one up months ago. Deciding from local state
+    // alone therefore sent every returning user back through onboarding to
+    // re-enter a profile the server already had, which is the bug this fixes.
+    //
+    // The sync restores the profile and the diary along with it: the cursor
+    // was reset to 0 by the sign-out, so this pulls the account's whole
+    // history back down.
+    setState(() => slowNote = 'Restoring your profile and diary...');
+    final restored = await Api.instance.sync();
+    if (!mounted) return;
+    setState(() => slowNote = null);
+
+    if (!restored.ok) {
+      // Signing in requires the server, so the network was working seconds
+      // ago and this is almost certainly transient. It still must not be
+      // ignored: continuing would show onboarding to someone who already has
+      // a profile, and the profile they typed would then overwrite the real
+      // one on the server, because conflicts are settled by whichever copy
+      // was written last.
+      setState(() {
+        busy = false;
+        clearSlowHint();
+        error = 'Signed in, but could not reach the server to restore your '
+            'profile. Check your connection and try again -- nothing has '
+            'been changed.';
+      });
+      return;
+    }
+
+    // Now the local copy reflects the account, so this is a real question
+    // rather than one with a foregone answer.
     final profile = await LocalDb.instance.loadProfile();
     if (!mounted) return;
 
