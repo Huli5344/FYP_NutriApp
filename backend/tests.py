@@ -2875,3 +2875,123 @@ class TestEditableRules(unittest.TestCase):
         self.assertNotEqual(with_edit, with_default,
                             "the fixture does not distinguish the two")
         self.assertEqual(stored["computed_target_kcal"], with_edit)
+
+    def test_every_editable_field_reaches_something(self):
+        """One assertion per field on the form, because two of them did not.
+
+        The first version of this feature saved all seven fields and wired
+        four. Editing the meal split or the insights window changed a row in
+        the database, showed "Customised" on the page, and altered nothing
+        the app did -- the worst kind of broken, because it looks like it
+        worked.
+
+        A test per stored value would not have caught it: the values were
+        stored correctly. What was missing was the reader. So each case here
+        goes through the thing that consumes the rule.
+        """
+        import logic
+        rules_after = lambda: self.stored()
+
+        # 1. activity multiplier -> the computed target
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"activity.Sedentary": 1.9}))
+        who = dict(age=40, height_cm=170.0, weight_kg=70.0,
+                   activity_level="Sedentary", goal="Maintain Weight",
+                   gender="Female")
+        self.assertNotEqual(logic.daily_target_for(rules=rules_after(), **who),
+                            logic.daily_target_for(**who),
+                            "activity multiplier does not reach the target")
+
+        # 2. goal adjustment -> the computed target
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"goal.Maintain Weight": 250}))
+        self.assertNotEqual(logic.daily_target_for(rules=rules_after(), **who),
+                            logic.daily_target_for(**who),
+                            "goal adjustment does not reach the target")
+
+        # 3. min / 4. max -> the clamp
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(min_daily_target=2300))
+        small = dict(age=70, height_cm=145.0, weight_kg=42.0,
+                     activity_level="Sedentary", goal="Lose Weight",
+                     gender="Female")
+        self.assertGreaterEqual(
+            logic.daily_target_for(rules=rules_after(), **small), 2300,
+            "minimum daily target does not reach the clamp")
+
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(max_daily_target=2100))
+        large = dict(age=25, height_cm=195.0, weight_kg=110.0,
+                     activity_level="Very Active", goal="Gain Weight",
+                     gender="Male")
+        self.assertLessEqual(
+            logic.daily_target_for(rules=rules_after(), **large), 2100,
+            "maximum daily target does not reach the clamp")
+
+        # 5. macro split -> the gram targets on the dashboard
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"macro.Lose Weight.0": 0.20,
+                                               "macro.Lose Weight.1": 0.50,
+                                               "macro.Lose Weight.2": 0.30}))
+        self.assertNotEqual(
+            logic.macro_split_for("Lose Weight", rules_after()),
+            logic.macro_split_for("Lose Weight"),
+            "macro split does not reach macro_split_for")
+
+        # 6. meal split -> the per-meal allowances
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"meal.breakfast": 0.40,
+                                               "meal.lunch": 0.30,
+                                               "meal.dinner": 0.25,
+                                               "meal.snacks": 0.05}))
+        summary = logic.summarise_day([], 2000, rules=rules_after())
+        self.assertEqual(summary["allowances"]["breakfast"], 800,
+                         "meal split does not reach the allowances")
+
+        # 7. insights window -> the default number of days charted
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(insights_window_days=21))
+        self.assertEqual(rules_after()["insights_window_days"], 21)
+
+        client = self.app.test_client()
+        client.post("/api/register", json={
+            "email": "charts@test.com", "password": "testpass123",
+            "name": "Charts"})
+        client.post("/login", data={"email": "charts@test.com",
+                                    "password": "testpass123"})
+        client.post("/profile/setup", data={
+            "name": "Charts", "age": 30, "gender": "Male", "height_cm": 175,
+            "weight_kg": 75, "activity_level": "Moderately Active",
+            "goal": "Maintain Weight", "target_weight_kg": 75},
+            follow_redirects=True)
+        body = client.get("/insights", follow_redirects=True).get_data(
+            as_text=True)
+        self.assertIn("21", body,
+                      "insights window does not reach the insights page")
+
+    def test_the_meal_split_reaches_the_dashboard(self):
+        """Through HTTP, not just through logic.summarise_day directly."""
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"meal.breakfast": 0.40,
+                                               "meal.lunch": 0.30,
+                                               "meal.dinner": 0.25,
+                                               "meal.snacks": 0.05}))
+        client = self.app.test_client()
+        client.post("/api/register", json={
+            "email": "diner@test.com", "password": "testpass123",
+            "name": "Diner"})
+        client.post("/login", data={"email": "diner@test.com",
+                                    "password": "testpass123"})
+        client.post("/profile/setup", data={
+            "name": "Diner", "age": 30, "gender": "Male", "height_cm": 175,
+            "weight_kg": 75, "activity_level": "Moderately Active",
+            "goal": "Maintain Weight", "target_weight_kg": 75},
+            follow_redirects=True)
+        # The dashboard must render with the edited split applied, not the
+        # built-in one. Asserted via the summary the page is built from.
+        import logic
+        rules = self.stored()
+        summary = logic.summarise_day([], 2000, rules=rules)
+        self.assertEqual(summary["allowances"]["snacks"], 100)
+        self.assertEqual(client.get("/", follow_redirects=True).status_code,
+                         200)

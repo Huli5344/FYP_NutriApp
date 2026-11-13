@@ -265,7 +265,8 @@ def todays_summary():
     entries = entries_for(date.today())
     return entries, logic.summarise_day(
         entries, g.profile["target_kcal"],
-        logic.macro_split_for(g.profile["goal"], current_rules()))
+        logic.macro_split_for(g.profile["goal"], current_rules()),
+        rules=current_rules())
 
 
 
@@ -900,9 +901,10 @@ def log_weight():
 def insights():
     """Data visualisation across a window of days."""
     try:
-        days = int(request.args.get("days", logic.INSIGHTS_WINDOW_DAYS))
+        default_days = current_rules()["insights_window_days"]
+        days = int(request.args.get("days", default_days))
     except (TypeError, ValueError):
-        days = logic.INSIGHTS_WINDOW_DAYS
+        days = current_rules()["insights_window_days"]
     days = max(1, min(days, 90))
 
     today = date.today()

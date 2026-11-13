@@ -294,7 +294,7 @@ def build_profile(name, age, height_cm, weight_kg, activity_level, goal,
     }
 
 
-def summarise_day(entries, target_kcal, split=None):
+def summarise_day(entries, target_kcal, split=None, rules=None):
     #Roll a day's entries into the figures the dashboard and diary show.
     # The macro split varies by goal, so it is a parameter rather than a
     # constant read from inside.
@@ -318,7 +318,7 @@ def summarise_day(entries, target_kcal, split=None):
         "macros": {k: round(v, 1) for k, v in totals.items() if k != "kcal"},
         "macro_targets": macro_targets(target_kcal, split or MACRO_SPLIT),
         "by_category": by_category,
-        "allowances": split_target(target_kcal),
+        "allowances": split_target(target_kcal, rules=rules),
         "entry_count": len(entries),
     }
 
