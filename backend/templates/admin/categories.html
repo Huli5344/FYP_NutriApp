@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Categories and tags | Nutri App admin{% endblock %}
@@ -62,14 +62,4 @@
         </div>
     </section>
 </div>
-
-<section class="panel note-panel">
-    <h2>Meal categories</h2>
-    <p>
-        Separately from food groups, every diary entry is filed under
-        breakfast, lunch, dinner or snacks. The app picks one from the time of
-        day and the person can change it. The split used to divide a daily
-        target between them is on the Rules and metrics page.
-    </p>
-</section>
 {% endblock %}

@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Reports | Nutri App admin{% endblock %}
@@ -73,15 +73,5 @@
             </tbody>
         </table>
     </div>
-</section>
-
-<section class="panel note-panel">
-    <h2>On exports</h2>
-    <p>
-        There is no download button here yet. These figures are aggregates
-        across accounts; a per-person export is somebody's food diary, and
-        handing that out from an admin page is a decision worth making
-        deliberately rather than by adding a button.
-    </p>
 </section>
 {% endblock %}

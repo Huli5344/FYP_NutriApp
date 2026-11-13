@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Roles and access | Nutri App admin{% endblock %}
@@ -70,32 +70,9 @@
 </section>
 
 <section class="panel not-implemented">
-    <h2>There is no permission matrix, because there are no tiers</h2>
-    <p>
-        This panel was first written against a three-role model &mdash; free
-        user, paid user, administrator &mdash; with a row per permission. This
-        project has no paid tier and no per-feature permissions: there are
-        accounts, and some of them have the administrator flag. Every feature
-        in the app is available to every account.
-    </p>
-    <p style="margin-top: 10px;">
-        A matrix is shown here only when one exists. Displaying fourteen rows
-        of Yes and No describing a system that was never built would read as
-        documentation, and the first person to rely on it would be relying on
-        nothing.
-    </p>
-</section>
-
-<section class="panel note-panel">
-    <h2>Granting the first administrator</h2>
-    <p>
-        A freshly deployed database has no administrators, so this panel is
-        reachable by nobody &mdash; which is the right starting state. The
-        first one is granted from the command line with
-        <code class="mono">tools/make_admin.py</code>; after that,
-        administrators can promote each other from a user's page. The last
-        remaining administrator cannot be demoted here, because that would
-        close the panel on everyone.
-    </p>
+    <h2>No permission matrix</h2>
+    <p>This project has no paid tier and no per-feature permissions:
+       there are accounts, and some of them are administrators. See
+       ADMIN-NOTES.md.</p>
 </section>
 {% endblock %}

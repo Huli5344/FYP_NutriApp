@@ -1,7 +1,10 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
-{% block title %}Recipe service | Nutri App admin{% endblock %}
+{% block title %}Recipe service | Nutri App admin<p class="muted" style="margin-top: 16px; font-size: 13px;">
+    {{ attribution }}
+</p>
+{% endblock %}
 
 {% block content %}
 {{ m.heading("NUTRI APP / ADMINISTRATION / RECIPE SERVICE", "Recipe service",
@@ -53,26 +56,13 @@
 </section>
 
 <section class="panel not-implemented">
-    <h2>This project uses TheMealDB, not Edamam</h2>
-    <p>
-        The panel originally had a sync button that called the Edamam
-        Nutrition API and wrote the results into a recipe table. This project
-        does not use Edamam, and its nutrition figures come from the Health
-        Promotion Board dataset rather than from any recipe service. Meal
-        suggestions come from TheMealDB, whose calorie figures are estimated
-        from the ingredient list &mdash; which is why the app labels them as
-        estimated wherever they appear.
-    </p>
-    <p style="margin-top: 10px;">
-        There is no import button here because an import would write estimated
-        figures into the same table as published ones, and nothing downstream
-        could tell them apart. The chain is: TheMealDB, then the cache, then
-        the local meals above.
-    </p>
+    <h2>No import from an external service</h2>
+    <p>Suggestions come from TheMealDB, whose calorie figures are
+       estimated; nutrition comes from the Health Promotion Board
+       dataset. Importing one into the other would mix estimated
+       figures with published ones. See ADMIN-NOTES.md.</p>
 </section>
-
-<section class="panel note-panel">
-    <h2>Attribution</h2>
-    <p>{{ attribution }}</p>
-</section>
+<p class="muted" style="margin-top: 16px; font-size: 13px;">
+    {{ attribution }}
+</p>
 {% endblock %}

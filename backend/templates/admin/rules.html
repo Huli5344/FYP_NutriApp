@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Rules and metrics | Nutri App admin{% endblock %}
@@ -138,14 +138,4 @@
         </p>
     </section>
 </div>
-
-<section class="panel note-panel">
-    <h2>Why this page has no edit controls</h2>
-    <p>
-        These values live in the server's code, which is what actually computes
-        every target. A form here could only write them somewhere else, leaving
-        two sets of numbers and no way to tell which one a given target came
-        from. Changing a rule is a code change and a deploy, deliberately.
-    </p>
-</section>
 {% endblock %}

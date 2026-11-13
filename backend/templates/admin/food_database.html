@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Food database | Nutri App admin{% endblock %}
@@ -61,17 +61,5 @@
         </table>
     </div>
     {{ m.pager(paging, "admin.food_database", q) }}
-</section>
-
-<section class="panel note-panel">
-    <h2>Why there is no edit button</h2>
-    <p>
-        These are the Health Promotion Board's published figures. Editing one
-        here would create a number that looks official and cites nothing, and
-        the diary stores a copy of the nutrition at the moment a meal is
-        logged, so an edit would not correct past entries anyway. Foods the
-        dataset lacks are added by people themselves, in the app, and are
-        counted separately above.
-    </p>
 </section>
 {% endblock %}

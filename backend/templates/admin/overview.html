@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Overview | Nutri App admin{% endblock %}
@@ -82,14 +82,4 @@
         </div>
     </section>
 </div>
-
-<section class="panel note-panel">
-    <h2>Where these numbers come from</h2>
-    <p>
-        The app's backend and this panel are one service sharing one database,
-        so the counts here are the rows the app is serving, at this moment.
-        Nothing on this page is cached, scheduled or seeded. An empty table
-        shows as empty rather than as a placeholder figure.
-    </p>
-</section>
 {% endblock %}

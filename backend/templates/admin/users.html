@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Users | Nutri App admin{% endblock %}
@@ -89,17 +89,5 @@
     </div>
 
     {{ m.pager(paging, "admin.user_management", q) }}
-</section>
-
-<section class="panel note-panel">
-    <h2>What this page deliberately cannot do</h2>
-    <p>
-        There is no delete, and no editing of somebody else's name, email or
-        goal. Deleting an account destroys that person's diary, and the only
-        person who should be able to do that is its owner &mdash; which the app
-        already allows, from the profile screen, after re-entering their
-        password. A one-click version here, with no password and no undo,
-        would be a strictly worse way to do the same thing.
-    </p>
 </section>
 {% endblock %}

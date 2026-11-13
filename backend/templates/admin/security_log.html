@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title%}Sessions | Nutri App admin{% endblock %}
@@ -71,21 +71,5 @@
             </tbody>
         </table>
     </div>
-</section>
-
-<section class="panel note-panel">
-    <h2>What this is, and what it is not</h2>
-    <p>
-        This is the sessions table: one row per device holding a token the
-        server would currently accept. Blocking an account deletes its rows
-        here immediately, which is what makes the block take effect rather
-        than waiting up to thirty days for the tokens to expire.
-    </p>
-    <p style="margin-top: 10px;">
-        It is not an audit trail. The server does not record a history of
-        administrative actions, so this page does not claim to show one. A
-        real audit log would need its own append-only table written on every
-        action &mdash; worth adding, but not worth faking in the meantime.
-    </p>
 </section>
 {% endblock %}

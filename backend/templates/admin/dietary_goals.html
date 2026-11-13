@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Dietary goals | Nutri App admin{% endblock %}
@@ -45,16 +45,5 @@
             </tbody>
         </table>
     </div>
-</section>
-
-<section class="panel note-panel">
-    <h2>Where the adjustment is applied</h2>
-    <p>
-        A daily target starts from the Mifflin&ndash;St Jeor estimate, is
-        multiplied by the activity level, then has the goal's adjustment added.
-        The result is clamped before it is stored, so no goal can produce a
-        target outside the safe range. The Rules and metrics page lists the
-        figures.
-    </p>
 </section>
 {% endblock %}

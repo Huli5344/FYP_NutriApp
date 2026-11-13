@@ -1,62 +1,44 @@
-{# Shared layout for the admin panel.
-
-   The structure, class names and stylesheet are as originally written. What
-   changed on the move into this project: url_for targets now name the `admin`
-   blueprint, the signed-in administrator is the real one rather than a fixed
-   string, and the sidebar links point at the sections that exist here. #}
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Nutri App admin{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='admin/style.css') }}">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>{% block title %}Nutri App{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
-    <header class="topbar">
-        <p>{{ topbar_title if topbar_title else "Administration" }}</p>
-        <div class="admin-profile">
-            {# The administrator actually signed in, read from the session.
-               The original showed a hardcoded name, which meant every action
-               in the security log was attributed to the same person whoever
-               performed it. #}
-            <span>{{ user.name }}, administrator</span>
-            <a class="button button-quiet button-small" href="{{ url_for('dashboard') }}">Back to app</a>
-            <a class="button button-quiet button-small" href="{{ url_for('logout') }}">Sign out</a>
-        </div>
-    </header>
+<div class="device">
 
-    <div class="dashboard-layout">
-        <aside class="sidebar">
-            <a class="logo" href="{{ url_for('admin.overview') }}">Nutri App <span>admin</span></a>
+  {# Simulated device status bar, shown across the top of every screen. #}
+  <div class="status"><span>9:41</span><span>signal wifi battery</span></div>
 
-            <nav class="sidebar-nav">
-                {% set here = request.endpoint %}
-                <a href="{{ url_for('admin.overview') }}" class="{% if here == 'admin.overview' %}active{% endif %}">Overview</a>
-                <a href="{{ url_for('admin.user_management') }}" class="{% if here in ['admin.user_management', 'admin.user_detail'] %}active{% endif %}">Users</a>
-                <a href="{{ url_for('admin.dietary_goals') }}" class="{% if here == 'admin.dietary_goals' %}active{% endif %}">Dietary goals</a>
-                <a href="{{ url_for('admin.food_database') }}" class="{% if here == 'admin.food_database' %}active{% endif %}">Food database</a>
-                <a href="{{ url_for('admin.categories_and_tags') }}" class="{% if here == 'admin.categories_and_tags' %}active{% endif %}">Categories and tags</a>
-                <a href="{{ url_for('admin.preferences') }}" class="{% if here == 'admin.preferences' %}active{% endif %}">Preferences and allergens</a>
-                <a href="{{ url_for('admin.recipe_api_page') }}" class="{% if here == 'admin.recipe_api_page' %}active{% endif %}">Recipe service</a>
-                <a href="{{ url_for('admin.rules_and_metrics') }}" class="{% if here == 'admin.rules_and_metrics' %}active{% endif %}">Rules and metrics</a>
-                <a href="{{ url_for('admin.reports') }}" class="{% if here == 'admin.reports' %}active{% endif %}">Reports</a>
-                <a href="{{ url_for('admin.roles_and_access') }}" class="{% if here == 'admin.roles_and_access' %}active{% endif %}">Roles and access</a>
-                <a href="{{ url_for('admin.security_log') }}" class="{% if here == 'admin.security_log' %}active{% endif %}">Sessions</a>
-            </nav>
-        </aside>
+  <div class="appbar">
+    {% block back %}{% endblock %}
+    <span class="title">{% block heading %}Nutri App{% endblock %}</span>
+    {% if user %}<a class="tm" href="{{ url_for('logout') }}"
+        title="Signed in as {{ user['email'] }}">Sign out</a>{% endif %}
+    {% block headright %}{% endblock %}
+  </div>
 
-        <main class="page-content">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                    <div class="alert alert-{{ 'error' if category == 'error' else 'success' }}">{{ message }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+  <main>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+    {% block fab %}{% endblock %}
+  </main>
 
-            {% block content %}{% endblock %}
-        </main>
-    </div>
+  {# Five destinations, all working. Hidden until there is an account to show
+     them for: every one of these pages needs a user. #}
+  {% if user %}
+  <nav class="tabs">
+    <a href="{{ url_for('dashboard') }}" class="{{ 'on' if active=='home' }}"><span class="sq"></span>Home</a>
+    <a href="{{ url_for('diary') }}" class="{{ 'on' if active=='diary' }}"><span class="sq"></span>Diary</a>
+    <a href="{{ url_for('discover') }}" class="{{ 'on' if active=='discover' }}"><span class="sq"></span>Discover</a>
+    <a href="{{ url_for('insights') }}" class="{{ 'on' if active=='insights' }}"><span class="sq"></span>Insights</a>
+    <a href="{{ url_for('profile') }}" class="{{ 'on' if active=='profile' }}"><span class="sq"></span>Profile</a>
+  </nav>
+  {% endif %}
+</div>
 </body>
 </html>

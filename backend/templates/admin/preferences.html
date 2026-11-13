@@ -1,4 +1,4 @@
-{% extends "admin/base.html" %}
+{% extends "admin/admin_base.html" %}
 {% import "admin/_macros.html" as m %}
 
 {% block title %}Preferences and allergens | Nutri App admin{% endblock %}
@@ -93,15 +93,5 @@
             </tbody>
         </table>
     </div>
-</section>
-
-<section class="panel note-panel">
-    <h2>How the filter uses these</h2>
-    <p>
-        An allergen on a profile removes every meal declaring it, and the check
-        runs again when a meal is saved &mdash; so a page rendered before an
-        allergy was recorded cannot write an unsafe entry. A meal with no
-        declared allergen list is treated as unknown rather than as safe.
-    </p>
 </section>
 {% endblock %}
