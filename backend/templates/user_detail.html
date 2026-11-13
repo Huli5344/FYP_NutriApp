@@ -1,0 +1,159 @@
+{% extends "admin/base.html" %}
+{% import "admin/_macros.html" as m %}
+
+{% block title %}{{ person.name }} | Nutri App admin{% endblock %}
+
+{% block content %}
+{{ m.heading("NUTRI APP / ADMINISTRATION / USERS / " ~ person.name|upper,
+   person.name,
+   "One account, as the server holds it.") }}
+
+<div class="split-grid">
+    <section class="panel">
+        <h2>Account</h2>
+        <table class="kv">
+            <tr><th>Email</th><td>{{ person.email }}</td></tr>
+            <tr><th>Registered</th><td class="mono">{{ m.moment(person.created_at) }}</td></tr>
+            <tr><th>Account id</th><td class="mono">{{ person.id }}</td></tr>
+            <tr>
+                <th>Status</th>
+                <td>
+                    {% if person.disabled %}
+                        <span class="status-pill status-inactive">Blocked</span>
+                    {% else %}
+                        <span class="status-pill status-active">Active</span>
+                    {% endif %}
+                    {% if person.is_admin %}
+                        <span class="status-pill status-admin">Admin</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Profile</th>
+                <td>
+                    {% if person.profile_updated %}
+                        Last saved {{ m.moment(person.profile_updated) }}
+                    {% else %}
+                        <span class="muted">Never completed setup</span>
+                    {% endif %}
+                </td>
+            </tr>
+        </table>
+
+        <div class="row-actions" style="justify-content: flex-start; margin-top: 16px;">
+            <form class="inline-form" method="POST" action="{{ url_for('admin.manage_user') }}">
+                <input type="hidden" name="user_id" value="{{ person.id }}">
+                <input type="hidden" name="next" value="{{ url_for('admin.user_detail', user_id=person.id) }}">
+                {% if person.disabled %}
+                    <input type="hidden" name="action" value="enable">
+                    <button class="button button-success button-small" type="submit">Unblock sign-in</button>
+                {% else %}
+                    <input type="hidden" name="action" value="disable">
+                    <button class="button button-danger button-small" type="submit"
+                            {% if person.id == user.id %}disabled title="You cannot block your own account"{% endif %}>Block sign-in</button>
+                {% endif %}
+            </form>
+
+            <form class="inline-form" method="POST" action="{{ url_for('admin.manage_user') }}">
+                <input type="hidden" name="user_id" value="{{ person.id }}">
+                <input type="hidden" name="next" value="{{ url_for('admin.user_detail', user_id=person.id) }}">
+                {% if person.is_admin %}
+                    <input type="hidden" name="action" value="demote">
+                    <button class="button button-quiet button-small" type="submit">Remove admin</button>
+                {% else %}
+                    <input type="hidden" name="action" value="promote">
+                    <button class="button button-dark button-small" type="submit">Make admin</button>
+                {% endif %}
+            </form>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Profile</h2>
+        {% if person.profile_updated %}
+        <table class="kv">
+            <tr><th>Goal</th><td>{{ person.goal }}</td></tr>
+            <tr>
+                <th>Daily target</th>
+                <td>
+                    {{ "{:,}".format(person.target_kcal) }} kcal
+                    {% if person.target_kcal != person.computed_target_kcal %}
+                        <span class="muted">(set by hand; calculated
+                        {{ "{:,}".format(person.computed_target_kcal) }})</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr><th>Activity level</th><td>{{ person.activity_level }}</td></tr>
+            <tr><th>Age</th><td>{{ person.age }}</td></tr>
+            <tr><th>Height</th><td>{{ person.height_cm }} cm</td></tr>
+            <tr>
+                <th>Weight</th>
+                <td>
+                    {{ person.weight_kg }} kg
+                    {% if person.target_weight_kg %}
+                        <span class="muted">&rarr; target {{ person.target_weight_kg }} kg</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Avoids</th>
+                <td>{{ person.allergens or "nothing recorded" }}</td>
+            </tr>
+            <tr>
+                <th>Diet</th>
+                <td>{{ person.diet_types or "no preference recorded" }}</td>
+            </tr>
+        </table>
+        {% else %}
+        <p class="empty">
+            This account registered but never completed profile setup, so it
+            has no target and the app's measuring screens are closed to it.
+        </p>
+        {% endif %}
+    </section>
+</div>
+
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div>
+            <h2>Logging, last 30 days</h2>
+            <p>One row per day on which something was logged.</p>
+        </div>
+        <span class="count-badge">{{ activity|length }} day{{ "" if activity|length == 1 else "s" }}</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Day</th>
+                    <th class="num">Meals</th>
+                    <th class="num">Calories</th>
+                    <th>Against target</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in activity %}
+                <tr>
+                    <td class="mono">{{ row.day }}</td>
+                    <td class="num">{{ row.entries }}</td>
+                    <td class="num">{{ row.kcal | round | int }}</td>
+                    <td style="width: 35%;">
+                        {% if person.target_kcal %}
+                            {{ m.bar(row.kcal, person.target_kcal) }}
+                        {% else %}
+                            <span class="muted">no target set</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="empty">Nothing logged in the last 30 days.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<p style="margin-top: 18px;">
+    <a class="button button-quiet button-small" href="{{ url_for('admin.user_management') }}">Back to all accounts</a>
+</p>
+{% endblock %}

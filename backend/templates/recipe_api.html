@@ -1,0 +1,68 @@
+{% extends "admin/base.html" %}
+{% import "admin/_macros.html" as m %}
+
+{% block title %}Recipe service | Nutri App admin<p class="muted" style="margin-top: 16px; font-size: 13px;">
+    {{ attribution }}
+</p>
+{% endblock %}
+
+{% block content %}
+{{ m.heading("NUTRI APP / ADMINISTRATION / RECIPE SERVICE", "Recipe service",
+   "Where meal suggestions come from, and what is stored locally.") }}
+
+<section class="stats-grid">
+    {{ m.stat("Local meals", recipes|length, "Used when the service is unreachable") }}
+    {{ m.stat("Cached responses", cached, "Expire after " ~ ttl ~ " hours") }}
+    {{ m.stat("Newest cache entry", (newest or "none")[:16]|replace("T", " "),
+              "From the api_cache table") }}
+</section>
+
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div>
+            <h2>Local meal pool</h2>
+            <p>Seeded with the module and used as the last step of the fallback chain.</p>
+        </div>
+        <span class="count-badge">{{ recipes|length }} meals</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Meal</th>
+                    <th class="num">kcal</th>
+                    <th class="num">Protein</th>
+                    <th class="num">Minutes</th>
+                    <th>Allergens</th>
+                    <th>Diets</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in recipes %}
+                <tr>
+                    <td class="user-name">{{ r.name }}</td>
+                    <td class="num">{{ r.kcal }}</td>
+                    <td class="num">{{ r.protein_g }}g</td>
+                    <td class="num">{{ r.minutes }}</td>
+                    <td>{{ r.allergens or "none declared" }}</td>
+                    <td class="muted">{{ r.diet_types or "&mdash;" | safe }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="empty">No local meals stored.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel not-implemented">
+    <h2>No import from an external service</h2>
+    <p>Suggestions come from TheMealDB, whose calorie figures are
+       estimated; nutrition comes from the Health Promotion Board
+       dataset. Importing one into the other would mix estimated
+       figures with published ones. See ADMIN-NOTES.md.</p>
+</section>
+<p class="muted" style="margin-top: 16px; font-size: 13px;">
+    {{ attribution }}
+</p>
+{% endblock %}

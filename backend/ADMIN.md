@@ -4,6 +4,11 @@ A staff-only view of the live database, at `/admin` on the same deployment as
 the app. It was written as a separate Flask application and moved in here; what
 follows is how to use it, what each page reads, and what changed in the move.
 
+For *why* each page is built the way it is — and why several obvious-looking
+features (delete, edit, export, an import button) are deliberately absent —
+see **ADMIN-NOTES.md**. That text used to sit at the bottom of the pages
+themselves.
+
 ---
 
 ## Getting in the first time

@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}
+{% import "admin/_macros.html" as m %}
+
+{% block title%}Sessions | Nutri App admin{% endblock %}
+
+{% block content %}
+{{ m.heading("NUTRI APP / ADMINISTRATION / SESSIONS", "Sessions",
+   "Every signed-in device the server would accept right now.") }}
+
+<section class="stats-grid">
+    {{ m.stat("Live sessions", stats.sessions, "Across all accounts") }}
+    {{ m.stat("Accounts", stats.users,
+              "{:,}".format(stats.disabled) ~ " blocked") }}
+    {{ m.stat("Administrators", stats.admins, "Accounts that can open this panel") }}
+</section>
+
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div>
+            <h2>Signed-in devices</h2>
+            <p>Newest first. Expired sessions are not listed: they are not a way in.</p>
+        </div>
+        <span class="count-badge">{{ sessions|length }} shown</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Signed in</th>
+                    <th>Account</th>
+                    <th>Email</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr>
+                    <td class="mono">{{ m.moment(s.created_at) }}</td>
+                    <td class="user-name">
+                        <a href="{{ url_for('admin.user_detail', user_id=s.user_id) }}"
+                           style="color: inherit;">{{ s.name }}</a>
+                    </td>
+                    <td>{{ s.email }}</td>
+                    <td class="mono">{{ m.day(s.expires_at) }}</td>
+                    <td>
+                        {% if s.is_admin %}
+                            <span class="status-pill status-admin">Admin</span>
+                        {% else %}
+                            <span class="status-pill status-active">Active</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="row-actions">
+                            <form class="inline-form" method="POST" action="{{ url_for('admin.manage_user') }}">
+                                <input type="hidden" name="action" value="disable">
+                                <input type="hidden" name="user_id" value="{{ s.user_id }}">
+                                <input type="hidden" name="next" value="{{ url_for('admin.security_log') }}">
+                                <button class="button button-danger button-small" type="submit"
+                                        {% if s.user_id == user.id %}disabled title="You cannot block your own account"{% endif %}>
+                                    Block and sign out
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="empty">Nobody is signed in.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

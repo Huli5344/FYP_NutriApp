@@ -1,0 +1,85 @@
+{% extends "admin/base.html" %}
+{% import "admin/_macros.html" as m %}
+
+{% block title %}Overview | Nutri App admin{% endblock %}
+
+{% block content %}
+{{ m.heading("NUTRI APP / ADMINISTRATION / OVERVIEW", "Overview",
+   "Every figure on this page is counted from the live database when the page
+    is drawn.") }}
+
+<section class="stats-grid">
+    {{ m.stat("Accounts", stats.users,
+              stats.with_profile ~ " have completed setup") }}
+    {{ m.stat("Active this week", stats.active_week,
+              "Accounts that logged a meal in the last 7 days") }}
+    {{ m.stat("Meals logged", stats.entries,
+              "{:,}".format(stats.entries_week) ~ " of them in the last 7 days") }}
+</section>
+
+<section class="stats-grid">
+    {{ m.stat("Foods listed", stats.foods,
+              "Health Promotion Board dataset") }}
+    {{ m.stat("Signed-in devices", stats.sessions,
+              "Sessions the server would accept right now") }}
+    {{ m.stat("Weigh-ins", stats.weights,
+              "{:,}".format(stats.custom_foods) ~ " user-added foods") }}
+</section>
+
+<div class="split-grid">
+    <section class="panel table-panel">
+        <div class="panel-heading">
+            <div>
+                <h2>Goals people chose</h2>
+                <p>From the profiles themselves, not from the options offered.</p>
+            </div>
+            <span class="count-badge">{{ stats.with_profile }} profiles</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Goal</th><th class="num">Accounts</th><th>Share</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in goals %}
+                    <tr>
+                        <td class="user-name">{{ row.goal }}</td>
+                        <td class="num">{{ row.users }}</td>
+                        <td style="width: 40%;">{{ m.bar(row.users, stats.with_profile) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="empty">No profiles yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel table-panel">
+        <div class="panel-heading">
+            <div>
+                <h2>Most logged, last 30 days</h2>
+                <p>What people actually eat, which is not what the catalogue emphasises.</p>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Food</th><th class="num">Times</th><th class="num">Avg kcal</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in most_logged %}
+                    <tr>
+                        <td class="user-name">{{ row.food_name }}</td>
+                        <td class="num">{{ row.times }}</td>
+                        <td class="num">{{ row.avg_kcal | round | int }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="empty">Nothing logged in the last 30 days.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
