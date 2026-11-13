@@ -10,6 +10,7 @@ import '../db.dart';
 import '../logic.dart';
 import '../models.dart';
 import '../ui.dart';
+import 'custom_food_screen.dart';
 import 'saved_screen.dart';
 
 class AddFoodScreen extends StatefulWidget {
@@ -20,6 +21,10 @@ class AddFoodScreen extends StatefulWidget {
 }
 
 class _AddFoodScreenState extends State<AddFoodScreen> {
+  /// The group LocalDb gives the user's own foods, used to tell them apart
+  /// from published ones in the list.
+  static const String _yours = 'Your foods';
+
   final _searchController = TextEditingController();
   final _noteController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
@@ -39,6 +44,29 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
     super.initState();
     _category = categoriseByTime(_eatenAt);
     _search('');
+  }
+
+  /// Create a food of the user's own, then select it straight away.
+  ///
+  /// Selecting it is the point: somebody who just typed in a food wants to
+  /// log it now, not find it again in a list.
+  Future<void> _addOwn() async {
+    final created = await Navigator.push<Food>(context,
+        MaterialPageRoute(builder: (_) => const CustomFoodScreen()));
+    if (!mounted || created == null) return;
+    setState(() => _selected = created);
+    _search(_searchController.text);
+  }
+
+  /// Open one of the user's own foods for editing, from the selected card.
+  Future<void> _editOwn(Food food) async {
+    await Navigator.push<Food>(context,
+        MaterialPageRoute(builder: (_) => CustomFoodScreen(existing: food)));
+    if (!mounted) return;
+    // It may have been edited or deleted, so drop the selection and let the
+    // refreshed search decide what is still there.
+    setState(() => _selected = null);
+    _search(_searchController.text);
   }
 
   Future<void> _search(String query) async {
@@ -134,6 +162,17 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
             ),
           ),
           const SizedBox(height: 10),
+          // Offered before the results rather than after them. Somebody
+          // reaches for this when the search has not found what they ate,
+          // which is exactly when they are looking at an empty or unhelpful
+          // list -- the bottom of it is the wrong place to put the answer.
+          WireButton(
+            label: 'Add a food that is not listed',
+            outlined: true,
+            small: true,
+            onPressed: _addOwn,
+          ),
+          const SizedBox(height: 10),
           WireCard(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Column(
@@ -152,10 +191,15 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                     trailing: '${f.perServing.kcal} kcal',
                     last: f == _results.last,
                     onTap: () => setState(() => _selected = f),
-                    // A whole roast turkey is one serving in the source data
-                    // and 4,243 kcal. Worth flagging before it is logged from
-                    // a single tap.
-                    tags: f.bulkServing ? const ['large portion'] : const [],
+                    tags: [
+                      // Only one tag is ever shown, and the two cannot both
+                      // apply: a custom food has no bulk-serving flag.
+                      if (f.foodGroup == _yours) 'yours',
+                      // A whole roast turkey is one serving in the source
+                      // data and 4,243 kcal. Worth flagging before it is
+                      // logged from a single tap.
+                      if (f.bulkServing) 'large portion',
+                    ],
                   ),
               ],
             ),
@@ -209,6 +253,15 @@ class _AddFoodScreenState extends State<AddFoodScreen> {
                       ),
                     ],
                   ),
+                  if (_selected!.foodGroup == _yours) ...[
+                    const SizedBox(height: 8),
+                    WireButton(
+                      label: 'Edit this food',
+                      outlined: true,
+                      small: true,
+                      onPressed: () => _editOwn(_selected!),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Text(
                       'One unit is ${_selected!.serving}. Use 0.5 for half, '

@@ -46,6 +46,14 @@ REQUIRED_FIELDS = ("id", "food_name", "kcal", "category", "eaten_at", "updated_a
 WEIGHT_FIELDS = ("id", "kg", "recorded_at", "note", "deleted", "updated_at")
 WEIGHT_REQUIRED = ("id", "kg", "recorded_at", "updated_at")
 
+# Foods the user entered themselves. A collection, so the same bookkeeping
+# again. `serving` is free text -- "1 bowl", "half a packet" -- because the
+# app multiplies by it rather than parsing it, exactly as it does with HPB's
+# published serving labels.
+CUSTOM_FOOD_FIELDS = ("id", "name", "serving", "kcal", "carbs_g", "protein_g",
+                      "fat_g", "deleted", "updated_at")
+CUSTOM_FOOD_REQUIRED = ("id", "name", "kcal", "updated_at")
+
 # The profile is one row per device rather than a collection, so it has no
 # tombstone: there is no meaningful "deleted profile" to propagate, only a
 # newer one.
@@ -123,6 +131,24 @@ def is_valid_weight(row):
     return 20.0 <= kg <= 500.0
 
 
+def is_valid_custom_food(row):
+    """A custom food needs a name and a calorie figure; the rest has defaults.
+
+    The name is checked for content rather than just presence: a food called
+    " " is indistinguishable from a mistake, and it would sit in the user's
+    search results forever with nothing to click on.
+    """
+    if not isinstance(row, dict) or not _has_required(row, CUSTOM_FOOD_REQUIRED):
+        return False
+    if not str(row.get("name", "")).strip():
+        return False
+    try:
+        float(row["kcal"])
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def is_valid_profile(row):
     """True if a pushed profile carries the fields the server needs."""
     if not _has_required(row, PROFILE_REQUIRED):
@@ -159,6 +185,22 @@ def clean_profile(row, server_now=None):
     out["target_is_manual"] = 1 if row.get("target_is_manual") else 0
     out["updated_at"] = clamp_timestamp(row.get("updated_at"), server_now)
     return out
+
+
+def clean_custom_food(row, server_now=None):
+    cleaned = {field: row.get(field) for field in CUSTOM_FOOD_FIELDS}
+    cleaned["name"] = str(cleaned["name"]).strip()[:120]
+    cleaned["serving"] = (str(cleaned.get("serving") or "").strip()
+                          or "1 serving")[:80]
+    cleaned["kcal"] = int(float(cleaned["kcal"]))
+    for macro in ("carbs_g", "protein_g", "fat_g"):
+        try:
+            cleaned[macro] = float(cleaned.get(macro) or 0)
+        except (TypeError, ValueError):
+            cleaned[macro] = 0.0
+    cleaned["deleted"] = 1 if cleaned.get("deleted") else 0
+    cleaned["updated_at"] = clamp_timestamp(cleaned["updated_at"], server_now)
+    return cleaned
 
 
 def should_apply(incoming, existing):

@@ -170,6 +170,38 @@ CREATE TABLE IF NOT EXISTS weights (
 
 CREATE INDEX IF NOT EXISTS weights_seq ON weights(user_id, server_seq);
 
+-- Foods a user entered themselves, for anything the Health Promotion Board
+-- does not list: a home recipe, an imported product, a dish from a stall
+-- that never made it into the dataset.
+--
+-- A collection like entries and weights rather than a column on them, because
+-- the point is reuse: enter it once, log it whenever. Same bookkeeping for
+-- the same reasons -- a client-generated id so two devices cannot collide, a
+-- tombstone so a deletion is not handed back by the next pull, and the
+-- composite key so one account's id can never overwrite another's row.
+--
+-- Deleting one does not touch the diary. An entry keeps its own copy of the
+-- figures, so meals logged from a custom food stay correct after the food is
+-- gone; what breaks is only the link used to recompute on an edit, and that
+-- already falls back to the stored totals.
+CREATE TABLE IF NOT EXISTS custom_foods (
+    id          {text} NOT NULL,
+    user_id     {text} NOT NULL REFERENCES users(id),
+    name        {text} NOT NULL,
+    serving     {text} NOT NULL DEFAULT '1 serving',
+    kcal        {int} NOT NULL,
+    carbs_g     {real} NOT NULL DEFAULT 0,
+    protein_g   {real} NOT NULL DEFAULT 0,
+    fat_g       {real} NOT NULL DEFAULT 0,
+    deleted     {int} NOT NULL DEFAULT 0,
+    updated_at  {text} NOT NULL,
+    server_seq  {int} NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS custom_foods_seq
+    ON custom_foods(user_id, server_seq);
+
 -- One row per user. The raw setup answers (preferences, restrictions) sit
 -- beside the normalised tokens (allergens, diet_types) the recipe filter
 -- compares against: the answers are what an edit form shows back, the tokens

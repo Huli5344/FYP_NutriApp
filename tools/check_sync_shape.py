@@ -91,6 +91,11 @@ def server_payloads():
         "recorded_at": "2026-11-10", "deleted": 0,
         "updated_at": "2026-11-10T12:31:00Z",
     }
+    custom_food = {
+        "id": "cccc3333-0000-4000-8000-000000000001", "name": "Ah Ma laksa",
+        "serving": "1 bowl", "kcal": 640, "carbs_g": 58.2, "protein_g": 22.1,
+        "fat_g": 31.4, "deleted": 0, "updated_at": "2026-11-10T12:31:00Z",
+    }
     profile = {
         "name": "Shape", "email": "shapecheck@test.com", "age": 20,
         "gender": "female", "height_cm": 180.0, "weight_kg": 66.0,
@@ -102,15 +107,18 @@ def server_payloads():
     }
     client.post("/sync", headers=headers, json={
         "since": 0, "changes": [entry], "weights": [weight],
-        "profile": profile})
+        "custom_foods": [custom_food], "profile": profile})
 
     # Pull as a device that knows nothing -- the sign-out/sign-in case.
     body = client.post("/sync", headers=headers, json={
-        "since": 0, "changes": [], "weights": [], "profile": None}).get_json()
+        "since": 0, "changes": [], "weights": [], "custom_foods": [],
+        "profile": None}).get_json()
 
+    foods = body.get("custom_foods") or []
     return {
         "entries": body["changes"][0] if body.get("changes") else None,
         "weights": body["weights"][0] if body.get("weights") else None,
+        "custom_foods": foods[0] if foods else None,
         "profile": body.get("profile"),
     }
 
@@ -128,7 +136,7 @@ def main():
           f"{', '.join(f'{t} ({len(c)})' for t, c in sorted(tables.items()))}")
     print()
 
-    for table in ("entries", "weights", "profile"):
+    for table in ("entries", "weights", "custom_foods", "profile"):
         payload = payloads[table]
         check(f"the server returns a {table} row on a from-scratch pull",
               payload is not None)
@@ -165,8 +173,15 @@ def main():
           "applyRemote/applyRemoteWeight/applyRemoteProfile must build their "
           "row with _localRow, or an unknown key throws and sync reports it "
           "as a network failure")
-    for fn in ("applyRemote", "applyRemoteWeight", "applyRemoteProfile"):
-        body = source[source.index(f"Future<void> {fn}("):]
+    for fn in ("applyRemote", "applyRemoteWeight", "applyRemoteCustomFood",
+               "applyRemoteProfile"):
+        marker = f"Future<void> {fn}("
+        if marker not in source:
+            check(f"{fn} exists in db.dart", False,
+                  "the server sends this collection, so something has to "
+                  "apply it locally")
+            continue
+        body = source[source.index(marker):]
         body = body[:body.index("\n  }")]
         check(f"{fn} builds its row with _localRow",
               "_localRow(" in body,

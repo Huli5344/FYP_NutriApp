@@ -317,6 +317,7 @@ class Api {
       while (guard++ < 20) {
         final dirty = await db.dirtyEntries();
         final dirtyWeights = await db.dirtyWeights();
+        final dirtyFoods = await db.dirtyCustomFoods();
         final dirtyProfile = await db.dirtyProfile();
         final since = await db.cursor();
 
@@ -329,6 +330,15 @@ class Api {
                 'changes': dirty.map((e) => e.toSyncJson()).toList(),
                 'weights':
                     dirtyWeights.map((w) => w.toSyncJson()).toList(),
+                // The stored row minus `dirty`, which is this device's own
+                // bookkeeping and means nothing to the server.
+                'custom_foods': [
+                  for (final food in dirtyFoods)
+                    {
+                      for (final field in food.entries)
+                        if (field.key != 'dirty') field.key: field.value,
+                    }
+                ],
                 'profile': dirtyProfile?.toSyncJson(),
               }),
             )
@@ -353,9 +363,12 @@ class Api {
         // Doing it earlier would lose an entry if the response never arrived.
         await db.markClean(dirty.map((e) => e.id));
         await db.markWeightsClean(dirtyWeights.map((w) => w.id));
+        await db.markCustomFoodsClean(
+            dirtyFoods.map((food) => '${food['id']}'));
         if (dirtyProfile != null) await db.markProfileClean();
         pushed += dirty.length +
             dirtyWeights.length +
+            dirtyFoods.length +
             (dirtyProfile == null ? 0 : 1);
 
         final changes =
@@ -372,17 +385,27 @@ class Api {
           await db.applyRemoteWeight(remote);
         }
 
+        final foods =
+            (body['custom_foods'] as List?)?.cast<Map<String, dynamic>>() ??
+                const [];
+        for (final remote in foods) {
+          await db.applyRemoteCustomFood(remote);
+        }
+
         final profile = body['profile'] as Map<String, dynamic>?;
         if (profile != null) await db.applyRemoteProfile(profile);
 
-        pulled +=
-            changes.length + weights.length + (profile == null ? 0 : 1);
+        pulled += changes.length +
+            weights.length +
+            foods.length +
+            (profile == null ? 0 : 1);
 
         await db.setCursor((body['cursor'] as num?)?.toInt() ?? since);
 
         final hasMore = (body['has_more'] as bool?) ?? false;
         final moreToPush = (await db.dirtyEntries()).isNotEmpty ||
             (await db.dirtyWeights()).isNotEmpty ||
+            (await db.dirtyCustomFoods()).isNotEmpty ||
             (await db.dirtyProfile()) != null;
         if (!hasMore && !moreToPush) break;
       }

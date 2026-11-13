@@ -991,16 +991,18 @@ def sync_entries():
     """Push local changes and pull everything changed elsewhere, in one call.
 
     Request:  {"since": <int>, "changes": [ {entry}, ... ],
-               "weights": [ {weight}, ... ], "profile": {profile} | null}
+               "weights": [ {weight}, ... ],
+               "custom_foods": [ {food}, ... ], "profile": {profile} | null}
     Response: {"server_time": iso, "cursor": <int>, "has_more": bool,
-               "changes": [...], "weights": [...], "profile": {...} | null,
+               "changes": [...], "weights": [...], "custom_foods": [...],
+               "profile": {...} | null,
                "push": {applied, skipped, invalid}}
 
     The client stores `cursor` and sends it back as `since` next time. It is a
     sequence number rather than a timestamp, so paging cannot be thrown off by
     a device whose clock is wrong.
 
-    All three collections share that one sequence, and the pull merges them
+    All four collections share that one sequence, and the pull merges them
     into a single ordered page. Paging each table separately would advance the
     cursor past rows in another table that were never sent, and those rows
     would never be pulled again.
@@ -1013,11 +1015,15 @@ def sync_entries():
 
     incoming = body.get("changes") or []
     incoming_weights = body.get("weights") or []
+    incoming_foods = body.get("custom_foods") or []
     incoming_profile = body.get("profile")
 
-    if not isinstance(incoming, list) or not isinstance(incoming_weights, list):
-        return jsonify({"error": "changes and weights must be lists"}), 400
-    if len(incoming) + len(incoming_weights) > 500:
+    if (not isinstance(incoming, list)
+            or not isinstance(incoming_weights, list)
+            or not isinstance(incoming_foods, list)):
+        return jsonify(
+            {"error": "changes, weights and custom_foods must be lists"}), 400
+    if len(incoming) + len(incoming_weights) + len(incoming_foods) > 500:
         return jsonify({"error": "too many changes in one push"}), 413
     if incoming_profile is not None and not isinstance(incoming_profile, dict):
         return jsonify({"error": "profile must be an object"}), 400
@@ -1055,6 +1061,20 @@ def sync_entries():
         _upsert(conn, "weights", row, user_id=user_id)
         applied += 1
 
+    for raw in incoming_foods:
+        if not sync.is_valid_custom_food(raw):
+            invalid += 1
+            continue
+        row = sync.clean_custom_food(raw, server_now)
+        existing = conn.execute(
+            "SELECT * FROM custom_foods WHERE id=? AND user_id=?",
+            (row["id"], user_id)).fetchone()
+        if not sync.should_apply(row, dict(existing) if existing else None):
+            skipped += 1
+            continue
+        _upsert(conn, "custom_foods", row, user_id=user_id)
+        applied += 1
+
     if incoming_profile is not None:
         if not sync.is_valid_profile(incoming_profile):
             invalid += 1
@@ -1074,7 +1094,8 @@ def sync_entries():
     # can confirm what the server actually stored.
     candidates = []
     limit = sync.PAGE_SIZE + 1
-    for table, kind in (("entries", "changes"), ("weights", "weights")):
+    for table, kind in (("entries", "changes"), ("weights", "weights"),
+                        ("custom_foods", "custom_foods")):
         rows = conn.execute(
             f"SELECT * FROM {table} WHERE user_id=? AND server_seq > ?"
             " ORDER BY server_seq LIMIT ?", (user_id, since, limit)).fetchall()
@@ -1097,6 +1118,8 @@ def sync_entries():
         "has_more": has_more,
         "changes": [row for kind, row in page if kind == "changes"],
         "weights": [row for kind, row in page if kind == "weights"],
+        "custom_foods":
+            [row for kind, row in page if kind == "custom_foods"],
         "profile": next((row for kind, row in page if kind == "profile"), None),
         "push": sync.summarise(applied, skipped, invalid),
     })

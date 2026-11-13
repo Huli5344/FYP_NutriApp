@@ -1302,6 +1302,157 @@ class TestApiNeverRedirectsToHtml(unittest.TestCase):
         self.assertIn("/profile/setup", response.headers["Location"])
 
 
+class TestCustomFoods(unittest.TestCase):
+    """Foods a user entered themselves, as a fourth synced collection.
+
+    The risks are the ones every collection here has: another account's row
+    must be untouchable, a deletion must not come back on the next pull, and
+    a stale copy from a second device must not overwrite a newer one.
+    """
+
+    def setUp(self):
+        import app
+        import database
+        database.init(force=True)
+        app.app.config["TESTING"] = True
+        self.client = app.app.test_client()
+        self.database = database
+
+    def register(self, email):
+        body = self.client.post("/api/register", json={
+            "email": email, "password": "testpass123", "name": "P"}).get_json()
+        return {"Authorization": f"Bearer {body['token']}"}
+
+    def food(self, **over):
+        row = {"id": "cf-1", "name": "Ah Ma laksa", "serving": "1 bowl",
+               "kcal": 640, "carbs_g": 58.2, "protein_g": 22.1, "fat_g": 31.4,
+               "deleted": 0, "updated_at": "2026-11-13T02:00:00Z"}
+        row.update(over)
+        return row
+
+    def sync(self, headers, foods=None, since=0):
+        return self.client.post("/sync", headers=headers, json={
+            "since": since, "changes": [], "weights": [],
+            "custom_foods": foods or [], "profile": None}).get_json()
+
+    # ------------------------------------------------------- round trip
+
+    def test_a_custom_food_survives_a_round_trip(self):
+        headers = self.register("a@test.com")
+        self.assertEqual(self.sync(headers, [self.food()])["push"]["applied"], 1)
+        back = self.sync(headers)["custom_foods"]
+        self.assertEqual(len(back), 1)
+        self.assertEqual(back[0]["name"], "Ah Ma laksa")
+        self.assertEqual(back[0]["kcal"], 640)
+        self.assertAlmostEqual(back[0]["carbs_g"], 58.2)
+
+    def test_the_name_is_trimmed_and_a_blank_one_refused(self):
+        headers = self.register("a@test.com")
+        self.sync(headers, [self.food(name="  Spaced  ")])
+        self.assertEqual(self.sync(headers)["custom_foods"][0]["name"], "Spaced")
+
+        result = self.sync(headers, [self.food(id="cf-2", name="   ")])
+        self.assertEqual(result["push"]["invalid"], 1)
+
+    def test_missing_calories_are_refused(self):
+        headers = self.register("a@test.com")
+        row = self.food()
+        del row["kcal"]
+        self.assertEqual(self.sync(headers, [row])["push"]["invalid"], 1)
+
+    def test_macros_default_to_zero_rather_than_failing(self):
+        headers = self.register("a@test.com")
+        row = self.food()
+        for macro in ("carbs_g", "protein_g", "fat_g"):
+            del row[macro]
+        self.assertEqual(self.sync(headers, [row])["push"]["applied"], 1)
+        back = self.sync(headers)["custom_foods"][0]
+        self.assertEqual(back["carbs_g"], 0)
+
+    def test_a_serving_defaults_when_left_out(self):
+        headers = self.register("a@test.com")
+        row = self.food()
+        del row["serving"]
+        self.sync(headers, [row])
+        self.assertEqual(self.sync(headers)["custom_foods"][0]["serving"],
+                         "1 serving")
+
+    # ---------------------------------------------------------- deletion
+
+    def test_a_deletion_travels_and_does_not_come_back_undeleted(self):
+        headers = self.register("a@test.com")
+        self.sync(headers, [self.food()])
+        self.sync(headers, [self.food(deleted=1,
+                                      updated_at="2026-11-13T03:00:00Z")])
+        back = self.sync(headers)["custom_foods"]
+        self.assertEqual(len(back), 1)
+        self.assertEqual(back[0]["deleted"], 1)
+
+    def test_deleting_a_food_leaves_diary_entries_alone(self):
+        """An entry keeps its own figures, so past meals stay correct."""
+        headers = self.register("a@test.com")
+        self.sync(headers, [self.food()])
+        self.client.post("/sync", headers=headers, json={
+            "since": 0, "weights": [], "custom_foods": [], "profile": None,
+            "changes": [{
+                "id": "e-1", "food_id": "cf-1", "food_name": "Ah Ma laksa",
+                "quantity": 1.0, "serving": "1 bowl", "kcal": 640,
+                "carbs_g": 58.2, "protein_g": 22.1, "fat_g": 31.4,
+                "category": "dinner", "tags": "", "note": "",
+                "eaten_at": "2026-11-13T02:30:00", "source": "custom",
+                "deleted": 0, "updated_at": "2026-11-13T02:31:00Z"}]})
+        self.sync(headers, [self.food(deleted=1,
+                                      updated_at="2026-11-13T03:00:00Z")])
+
+        entries = self.client.post("/sync", headers=headers, json={
+            "since": 0, "changes": [], "weights": [], "custom_foods": [],
+            "profile": None}).get_json()["changes"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["kcal"], 640)
+        self.assertEqual(entries[0]["deleted"], 0)
+
+    # ------------------------------------------------------- separation
+
+    def test_another_account_never_sees_it(self):
+        mine = self.register("mine@test.com")
+        theirs = self.register("theirs@test.com")
+        self.sync(mine, [self.food()])
+        self.assertEqual(self.sync(theirs)["custom_foods"], [])
+
+    def test_a_shared_id_does_not_overwrite_the_other_account(self):
+        """Ids are generated on the device, so a collision is possible."""
+        mine = self.register("mine@test.com")
+        theirs = self.register("theirs@test.com")
+        self.sync(mine, [self.food(name="Mine")])
+        self.sync(theirs, [self.food(name="Theirs",
+                                     updated_at="2026-11-13T04:00:00Z")])
+        self.assertEqual(self.sync(mine)["custom_foods"][0]["name"], "Mine")
+        self.assertEqual(self.sync(theirs)["custom_foods"][0]["name"], "Theirs")
+
+    def test_an_older_copy_does_not_overwrite_a_newer_one(self):
+        headers = self.register("a@test.com")
+        self.sync(headers, [self.food(name="Newer",
+                                      updated_at="2026-11-13T04:00:00Z")])
+        result = self.sync(headers, [self.food(name="Older",
+                                               updated_at="2026-11-13T01:00:00Z")])
+        self.assertEqual(result["push"]["skipped"], 1)
+        self.assertEqual(self.sync(headers)["custom_foods"][0]["name"], "Newer")
+
+    def test_it_shares_the_cursor_with_the_other_collections(self):
+        """One sequence across all four, or paging loses rows."""
+        headers = self.register("a@test.com")
+        first = self.sync(headers, [self.food()])
+        cursor = first["cursor"]
+        self.assertEqual(self.sync(headers, since=cursor)["custom_foods"], [])
+
+    def test_a_push_without_the_key_still_works(self):
+        """An older build of the app sends no custom_foods field."""
+        headers = self.register("a@test.com")
+        response = self.client.post("/sync", headers=headers, json={
+            "since": 0, "changes": [], "weights": [], "profile": None})
+        self.assertEqual(response.status_code, 200)
+
+
 class TestDeleteAccount(unittest.TestCase):
     """Deleting an account is the one action with no undo.
 

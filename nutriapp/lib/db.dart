@@ -33,7 +33,7 @@ class LocalDb {
   /// Bumped whenever the schema changes. A device that already holds an older
   /// database runs [_upgrade] rather than [_create], so an installed copy of
   /// the app is migrated instead of failing on a missing table.
-  static const int schemaVersion = 3;
+  static const int schemaVersion = 4;
 
   Future<Database> _open() async {
     final path = p.join(await getDatabasesPath(), 'nutriapp.db');
@@ -43,12 +43,14 @@ class LocalDb {
       onCreate: (db, version) async {
         await _createV1(db);
         await _createV2(db);
+        await _createV4(db);
       },
       onUpgrade: (db, from, to) async {
         // Each step is additive and guarded, so upgrading from any earlier
         // version is a matter of running the steps it has not seen.
         if (from < 2) await _createV2(db);
         if (from < 3) await _upgradeToV3(db);
+        if (from < 4) await _createV4(db);
       },
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
@@ -113,6 +115,33 @@ class LocalDb {
   /// stores the new strings happily, and a table rebuild on a database that
   /// cannot be tested here is a worse risk than a misleading declaration.
   /// `Entry.fromRow` reads this column defensively for the same reason.
+  /// Foods the user entered themselves.
+  ///
+  /// A table rather than a column on entries, because the point is reuse:
+  /// enter it once, log it whenever. It syncs like entries and weights --
+  /// client-generated id, tombstone, dirty flag -- and for the same reason
+  /// it has to: signing out clears this device, so a custom food kept only
+  /// here would be destroyed by a sign-out with nothing on the server to
+  /// bring it back.
+  Future<void> _createV4(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS custom_foods (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        serving     TEXT NOT NULL DEFAULT '1 serving',
+        kcal        INTEGER NOT NULL,
+        carbs_g     REAL NOT NULL DEFAULT 0,
+        protein_g   REAL NOT NULL DEFAULT 0,
+        fat_g       REAL NOT NULL DEFAULT 0,
+        deleted     INTEGER NOT NULL DEFAULT 0,
+        updated_at  TEXT NOT NULL,
+        dirty       INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS custom_foods_name ON custom_foods(name)');
+  }
+
   Future<void> _upgradeToV3(Database db) async {
     await db.execute('UPDATE entries SET food_id = NULL');
   }
@@ -170,10 +199,30 @@ class LocalDb {
   ///
   /// Asynchronous now, where the thirty hand-entered foods were a constant
   /// list: 2,692 rows belong in a queryable table, not in compiled Dart.
-  Future<List<Food>> searchFoods(String query, {int limit = 30}) =>
-      FoodDb.instance.search(query, limit: limit);
+  /// Search the user's own foods first, then the published table.
+  ///
+  /// Theirs come first deliberately: somebody who went to the trouble of
+  /// entering a food is looking for that food, and burying it under 2,692
+  /// published ones would make the feature pointless.
+  Future<List<Food>> searchFoods(String query, {int limit = 30}) async {
+    final mine = await customFoods(query: query);
+    if (mine.length >= limit) return mine.take(limit).toList();
+    final published =
+        await FoodDb.instance.search(query, limit: limit - mine.length);
+    return [...mine, ...published];
+  }
 
-  Future<Food?> foodById(String id) => FoodDb.instance.byId(id);
+  /// Custom foods are checked first, and a miss falls through to the
+  /// published table. The ids cannot collide -- HPB's look like F05100112
+  /// and a custom one is a UUID -- so the order is about cost, not
+  /// correctness.
+  ///
+  /// Returning null for a deleted custom food is deliberate. The edit screen
+  /// then recomputes from the figures stored on the entry instead, which is
+  /// exactly the fallback it already has for entries logged from a recipe.
+  Future<Food?> foodById(String id) async {
+    return await customFoodById(id) ?? await FoodDb.instance.byId(id);
+  }
 
   Recipe? localRecipeById(String id) {
     for (final r in seedRecipes) {
@@ -396,6 +445,140 @@ class LocalDb {
     }
     return total;
   }
+
+  // ------------------------------------------------------- custom foods
+
+  /// The user's own foods, newest first. Tombstones are left out.
+  Future<List<Food>> customFoods({String query = ''}) async {
+    final db = await database;
+    final text = query.trim().toLowerCase();
+    final rows = await db.query(
+      'custom_foods',
+      where: text.isEmpty
+          ? 'deleted = 0'
+          : 'deleted = 0 AND lower(name) LIKE ? ESCAPE \'\\\'',
+      whereArgs: text.isEmpty ? null : ['%${_escapeLike(text)}%'],
+      orderBy: 'updated_at DESC',
+    );
+    return rows.map(_customToFood).toList();
+  }
+
+  Future<Food?> customFoodById(String id) async {
+    final db = await database;
+    final rows = await db.query('custom_foods',
+        where: 'id = ? AND deleted = 0', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : _customToFood(rows.first);
+  }
+
+  /// Create or replace one. Returns the stored food.
+  ///
+  /// `dirty` is set on every write so the next sync pushes it, and
+  /// `updated_at` is stamped in UTC because the server settles conflicts by
+  /// comparing timestamps across devices.
+  Future<Food> saveCustomFood({
+    String? id,
+    required String name,
+    required String serving,
+    required int kcal,
+    required double carbsG,
+    required double proteinG,
+    required double fatG,
+  }) async {
+    final db = await database;
+    final row = {
+      'id': id ?? _uuid.v4(),
+      'name': name.trim(),
+      'serving': serving.trim().isEmpty ? '1 serving' : serving.trim(),
+      'kcal': kcal,
+      'carbs_g': carbsG,
+      'protein_g': proteinG,
+      'fat_g': fatG,
+      'deleted': 0,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+      'dirty': 1,
+    };
+    await db.insert('custom_foods', row,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    return _customToFood(row);
+  }
+
+  /// Tombstone it, rather than remove the row.
+  ///
+  /// A deleted row still has to travel: without it the next pull would hand
+  /// the food straight back. Diary entries are untouched -- each keeps its
+  /// own copy of the figures, so meals already logged stay correct.
+  Future<void> deleteCustomFood(String id) async {
+    final db = await database;
+    await db.update(
+      'custom_foods',
+      {
+        'deleted': 1,
+        'dirty': 1,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<List<Map<String, Object?>>> dirtyCustomFoods() async {
+    final db = await database;
+    return db.query('custom_foods', where: 'dirty = 1', limit: 500);
+  }
+
+  Future<void> markCustomFoodsClean(Iterable<String> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final id in ids) {
+      batch.update('custom_foods', {'dirty': 0},
+          where: 'id = ?', whereArgs: [id]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Apply a custom food that arrived from the server. Same rule as entries:
+  /// the newer `updated_at` wins, and an older copy is ignored.
+  Future<void> applyRemoteCustomFood(Map<String, dynamic> remote) async {
+    final db = await database;
+    final id = remote['id'] as String?;
+    if (id == null) return;
+    final incomingAt = DateTime.tryParse('${remote['updated_at']}');
+    if (incomingAt == null) return;
+
+    final existing = await db.query('custom_foods',
+        where: 'id = ?', whereArgs: [id], limit: 1);
+    if (existing.isNotEmpty) {
+      final localAt = DateTime.tryParse('${existing.first['updated_at']}');
+      if (localAt != null && !incomingAt.isAfter(localAt)) return;
+    }
+
+    final row = await _localRow('custom_foods', remote, {'dirty': 0});
+    await db.insert('custom_foods', row,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// A stored row as a [Food], so a custom food is interchangeable with an
+  /// HPB one everywhere downstream -- the add screen, the diary, scaling.
+  static Food _customToFood(Map<String, Object?> row) => Food(
+        id: '${row['id']}',
+        name: '${row['name']}',
+        foodGroup: 'Your foods',
+        serving: '${row['serving']}',
+        perServing: Nutrition(
+          kcal: (row['kcal'] as num).round(),
+          carbsG: (row['carbs_g'] as num?)?.toDouble() ?? 0,
+          proteinG: (row['protein_g'] as num?)?.toDouble() ?? 0,
+          fatG: (row['fat_g'] as num?)?.toDouble() ?? 0,
+        ),
+      );
+
+  /// `_` and `%` are wildcards to LIKE but ordinary characters in a search
+  /// box, the same as in FoodDb.
+  static String _escapeLike(String text) => text
+      .replaceAll('\\', '\\\\')
+      .replaceAll('%', '\\%')
+      .replaceAll('_', '\\_');
 
   Future<List<Entry>> dirtyEntries() async {
     final db = await database;
