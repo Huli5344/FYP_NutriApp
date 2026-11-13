@@ -52,8 +52,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text("Today's diary")),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.ink,
-        foregroundColor: Colors.white,
         onPressed: () async {
           await Navigator.push(context,
               MaterialPageRoute(builder: (_) => const AddFoodScreen()));

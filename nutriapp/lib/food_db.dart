@@ -33,9 +33,15 @@ class FoodDb {
   static const String fileName = 'foods.db';
 
   /// Bumped when a new foods.db ships, so the copy on the device is replaced
-  /// rather than kept forever. Compared against a marker row in the user
-  /// database, because this file itself is read-only.
-  static const int datasetVersion = 1;
+  /// rather than kept forever.
+  ///
+  /// Version 2 added the allergens and diet_types columns, which is what lets
+  /// a food appear as a suggestion without bypassing the allergen filter.
+  ///
+  /// This was declared from the start and never actually read: _open copied
+  /// the asset only when no file existed, so an updated dataset reached new
+  /// installs and nobody else. The marker below is what makes it real.
+  static const int datasetVersion = 2;
 
   Database? _db;
 
@@ -55,11 +61,25 @@ class FoodDb {
   Future<Database> _open() async {
     final path = p.join(await getDatabasesPath(), fileName);
 
-    // An asset cannot be opened in place, so it is copied out once. The file
-    // is only written when absent: copying on every launch would waste a
-    // second of startup and churn the device's storage for no reason.
-    if (!await databaseExists(path)) {
+    // The version of the copy currently on the device, kept in a plain file
+    // beside it. A file rather than a row, because this database is opened
+    // read-only and reaching into the other one from here would make the two
+    // import each other.
+    final stamp = File('$path.version');
+    var copied = 0;
+    if (await databaseExists(path) && await stamp.exists()) {
+      copied = int.tryParse((await stamp.readAsString()).trim()) ?? 0;
+    }
+
+    // An asset cannot be opened in place, so it is copied out. Only when it
+    // is absent or stale: copying on every launch would cost a second of
+    // startup and churn the device's storage for nothing.
+    if (copied != datasetVersion) {
+      if (await databaseExists(path)) {
+        await deleteDatabase(path);
+      }
       await _copyFromAsset(path);
+      await stamp.writeAsString('$datasetVersion');
     }
     return openDatabase(path, readOnly: true);
   }
@@ -121,6 +141,78 @@ class FoodDb {
         'name LIMIT ?',
         ['%$pattern%', '$pattern%', limit]);
     return rows.map(Food.fromRow).toList();
+  }
+
+  /// Foods offered as meal suggestions, shaped as recipes.
+  ///
+  /// Discover ranks and filters [Recipe]s, so foods arrive as recipes rather
+  /// than as a second type threaded through the same pipeline. They carry
+  /// `estimated: false`, because unlike a MealDB recipe their figures are
+  /// published rather than worked out from an ingredient list, and
+  /// `source: 'hpb'`, which the detail screen uses to describe where the
+  /// allergen tags came from.
+  ///
+  /// The tags are the point. Without the allergens column every food would
+  /// have an empty allergen list, and an empty list is indistinguishable
+  /// from a safe one to `isSafeFor` -- so all 2,692 would pass every filter.
+  ///
+  /// Only a slice is returned. There are 2,692 foods against a few dozen
+  /// recipes, so handing the ranker everything at once would bury the
+  /// recipes entirely. Bulk servings are left out because a whole roast
+  /// turkey is not a dinner suggestion.
+  ///
+  /// [offset] is what makes the Discover list endless. Rows come back
+  /// ordered by distance from the calories left for this meal, so page one
+  /// is the closest fits and each page after is a little further off -- the
+  /// right order to run out in. Ordering by an expression rather than a
+  /// column means SQLite sorts the whole table for each page; at 2,692 rows
+  /// that is cheap, and the alternative is an index that would have to be
+  /// rebuilt for every different target.
+  Future<List<Recipe>> suggestions({
+    required int targetKcal,
+    int limit = 40,
+    int offset = 0,
+  }) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT food_id, name, food_group, energy_kcal, carbohydrate_g, '
+      'protein_g, total_fat_g, allergens, diet_types FROM foods '
+      'WHERE bulk_serving = 0 AND energy_kcal > 0 '
+      'ORDER BY ABS(energy_kcal - ?), food_id LIMIT ? OFFSET ?',
+      [targetKcal, limit, offset],
+    );
+
+    return [
+      for (final row in rows)
+        Recipe(
+          id: 'hpb-${row['food_id']}',
+          name: '${row['name']}',
+          kcal: (row['energy_kcal'] as num).round(),
+          carbsG: (row['carbohydrate_g'] as num?)?.toDouble() ?? 0,
+          proteinG: (row['protein_g'] as num?)?.toDouble() ?? 0,
+          fatG: (row['total_fat_g'] as num?)?.toDouble() ?? 0,
+          allergens: _split(row['allergens']),
+          dietTypes: _split(row['diet_types']),
+          area: row['food_group'] as String?,
+          estimated: false,
+          source: 'hpb',
+        ),
+    ];
+  }
+
+  /// How many foods could ever be suggested, so the list knows when to stop
+  /// asking for more.
+  Future<int> suggestionCount() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+        'SELECT COUNT(*) n FROM foods WHERE bulk_serving = 0 '
+        'AND energy_kcal > 0');
+    return (rows.first['n'] as int?) ?? 0;
+  }
+
+  static List<String> _split(Object? value) {
+    final text = (value as String?) ?? '';
+    return text.split(',').where((part) => part.isNotEmpty).toList();
   }
 
   Future<Food?> byId(String foodId) async {

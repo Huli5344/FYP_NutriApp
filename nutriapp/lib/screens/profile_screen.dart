@@ -521,13 +521,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          const WireNote(
-              'Your password is never stored anywhere -- the server keeps a '
-              'slow salted hash of it. Your profile and diary live on this '
-              'device and sync to your account when a connection is '
-              'available.'),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           WireButton(
               label: 'Sync now', outlined: true, small: true, onPressed: _syncNow),
           if (_syncNote != null) ...[

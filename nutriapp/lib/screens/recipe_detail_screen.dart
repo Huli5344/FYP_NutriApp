@@ -95,21 +95,30 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          const Text('Ingredients', style: tHead),
-          const SizedBox(height: 6),
-          WireCard(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Column(
-              children: [
-                for (final i in r.ingredients)
-                  WireRow(title: i, last: i == r.ingredients.last),
-              ],
+          // A single food has no ingredient list. An empty card under an
+          // "Ingredients" heading would read as a recipe whose ingredients
+          // failed to load.
+          if (r.ingredients.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Ingredients', style: tHead),
+            const SizedBox(height: 6),
+            WireCard(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Column(
+                children: [
+                  for (final i in r.ingredients)
+                    WireRow(title: i, last: i == r.ingredients.last),
+                ],
+              ),
             ),
-          ),
+          ],
           if (r.allergens.isNotEmpty) ...[
             const SizedBox(height: 10),
-            WireNote('Ingredients list: ${r.allergens.join(', ')}.', warning: true),
+            WireNote(
+                r.source == 'hpb'
+                    ? 'May contain ${r.allergens.join(', ')}.'
+                    : 'Ingredients list: ${r.allergens.join(', ')}.',
+                warning: true),
           ],
           if (clear && profile.restrictions.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -120,6 +129,15 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             const SizedBox(height: 10),
             const WireNote('You have no dietary restrictions recorded, so '
                 'nothing was checked. Add them on the Profile tab.'),
+          ],
+          if (r.source == 'hpb') ...[
+            const SizedBox(height: 10),
+            const WireNote(
+                'Allergens for single foods are worked out from the food\'s '
+                'name, not from an ingredient list -- the Health Promotion '
+                'Board publishes nutrients, not allergens. A dish can contain '
+                'something its name does not mention.',
+                warning: true),
           ],
           if (r.estimated) ...[
             const SizedBox(height: 10),

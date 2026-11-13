@@ -108,6 +108,17 @@ ThemeData buildTheme() {
           fontFamily: 'IBMPlexSans', fontSize: 15, color: Colors.white),
       behavior: SnackBarBehavior.floating,
     ),
+    // Styled once here because three screens show this button and all three
+    // had the colour written into them, which is how they drifted off the
+    // palette when it changed.
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: AppColors.accent,
+      foregroundColor: Colors.white,
+      elevation: 2,
+      focusElevation: 2,
+      hoverElevation: 2,
+      highlightElevation: 4,
+    ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: AppColors.accent,

@@ -96,8 +96,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.ink,
-        foregroundColor: Colors.white,
         onPressed: () async {
           await Navigator.push(context,
               MaterialPageRoute(builder: (_) => const AddFoodScreen()));
