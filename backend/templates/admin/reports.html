@@ -1,0 +1,87 @@
+{% extends "admin/base.html" %}
+{% import "admin/_macros.html" as m %}
+
+{% block title %}Reports | Nutri App admin{% endblock %}
+
+{% block content %}
+{{ m.heading("NUTRI APP / ADMINISTRATION / REPORTS", "Reports",
+   "Activity across all accounts. Counted at render time.") }}
+
+<section class="stats-grid">
+    {{ m.stat("Meals logged", stats.entries, "All time, excluding deleted") }}
+    {{ m.stat("Last 7 days", stats.entries_week,
+              "{:,}".format(stats.active_week) ~ " accounts active") }}
+    {{ m.stat("Weigh-ins", stats.weights, "All time") }}
+</section>
+
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div>
+            <h2>Last 14 days</h2>
+            <p>Days with no logging do not appear, because no rows were written on them.</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Day</th>
+                    <th class="num">Meals</th>
+                    <th class="num">Accounts</th>
+                    <th class="num">Total kcal</th>
+                    <th>Relative volume</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set busiest = daily | map(attribute="entries") | max if daily else 0 %}
+                {% for row in daily %}
+                <tr>
+                    <td class="mono">{{ row.day }}</td>
+                    <td class="num">{{ row.entries }}</td>
+                    <td class="num">{{ row.users }}</td>
+                    <td class="num">{{ "{:,}".format(row.kcal | round | int) }}</td>
+                    <td style="width: 35%;">{{ m.bar(row.entries, busiest) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="empty">Nothing logged in the last 14 days.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div>
+            <h2>Most logged, last 30 days</h2>
+            <p>By the food name stored on the entry, across every account.</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Food</th><th class="num">Times</th><th class="num">Avg kcal</th></tr></thead>
+            <tbody>
+                {% for row in most_logged %}
+                <tr>
+                    <td class="user-name">{{ row.food_name }}</td>
+                    <td class="num">{{ row.times }}</td>
+                    <td class="num">{{ row.avg_kcal | round | int }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" class="empty">Nothing logged in the last 30 days.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel note-panel">
+    <h2>On exports</h2>
+    <p>
+        There is no download button here yet. These figures are aggregates
+        across accounts; a per-person export is somebody's food diary, and
+        handing that out from an admin page is a decision worth making
+        deliberately rather than by adding a button.
+    </p>
+</section>
+{% endblock %}

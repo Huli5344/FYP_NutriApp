@@ -179,15 +179,34 @@ def issue_token(conn, user_id):
     return token
 
 
+def is_blocked(user):
+    """True when an administrator has disabled this account.
+
+    A separate function rather than `user["disabled"]` at each call site,
+    because the column was added after the first deploy: a row read from a
+    database that has not been migrated yet simply has no such key, and the
+    direct form would raise instead of treating the account as fine.
+    """
+    return bool(user and user.get("disabled"))
+
+
 def user_for_token(conn, token):
-    """The user a token identifies, or None if unknown or expired."""
+    """The user a token identifies, or None if unknown, expired or blocked.
+
+    Blocking is enforced here as well as at sign-in because this is the one
+    place every authenticated request passes through. Disabling an account
+    already deletes its sessions, so in practice there is no token left to
+    present -- but that makes this the backstop for a token issued in the
+    moment between the two, and for any future path that disables an account
+    without going through database.admin_set_disabled.
+    """
     if not token:
         return None
     row = conn.execute(
         "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token=? AND s.expires_at > ?",
         (token, now_iso())).fetchone()
-    return row
+    return None if is_blocked(row) else row
 
 
 def revoke_token(conn, token):

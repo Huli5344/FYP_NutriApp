@@ -196,7 +196,7 @@ def clear(url, token):
     push(url, token, dead_entries, dead_weights)
     print(f"Removed {len(dead_entries)} entries and {len(dead_weights)} "
           f"weights.")
-    print("Open the app and let it sync to see them disappear.")
+    print("In the app: Profile tab -> Sync now, to see them disappear.")
 
 
 def main():
@@ -225,8 +225,12 @@ def main():
     applied = push(args.url, token, entries, weights)
     print(f"Server applied {applied} rows.")
     print()
-    print("Open the app and pull down on Discover, or reopen it, to sync.")
-    print(f"Remove it later with the same command plus --clear.")
+    print("In the app: Profile tab -> Sync now.")
+    print("  (Pulling down on Discover fetches recipes, it does not sync.")
+    print("   Sync also runs when the app launches or returns to the")
+    print("   foreground, so backgrounding and reopening works too.)")
+    print()
+    print("Remove it later with the same command plus --clear.")
     return 0
 
 

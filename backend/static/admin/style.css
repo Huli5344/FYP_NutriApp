@@ -1,0 +1,142 @@
+:root {
+    --ink: #26313a;
+    --muted: #64707a;
+    --line: #d9dedc;
+    --soft: #f4f6f5;
+    --sidebar-active: #e9eeea;
+    --panel: #ffffff;
+    --dark-button: #222a2f;
+    --green: #23734a;
+    --green-bg: #e8f5ed;
+    --red: #a44343;
+    --red-bg: #fbecec;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; background: #fbfcfb; color: var(--ink);
+    font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.45;
+}
+button, input { font: inherit; }
+.topbar {
+    align-items: center; border-bottom: 1px solid var(--line); display: flex;
+    height: 48px; justify-content: space-between; padding: 0 32px 0 16px;
+}
+.topbar p { color: #2d363d; font-size: 18px; margin: 0; }
+.admin-profile { align-items: center; color: #5c6770; display: flex; font-size: 14px; gap: 12px; }
+.profile-square { border: 1px solid #cbd2cf; display: inline-block; height: 24px; width: 24px; }
+.dashboard-layout { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: calc(100vh - 48px); }
+.sidebar { border-right: 1px solid var(--line); padding-top: 20px; }
+.logo { color: #20292f; display: block; font-size: 18px; font-weight: 700; margin: 0 16px 18px; text-decoration: none; }
+.logo span { font-weight: 400; }
+.sidebar-nav { display: grid; }
+.sidebar-nav a { color: #707b83; display: block; padding: 12px 16px; text-decoration: none; }
+.sidebar-nav a:hover, .sidebar-nav a.active { background: var(--sidebar-active); color: #28323a; font-weight: 700; }
+.page-content { padding: 30px 26px; }
+.page-heading { align-items: flex-start; display: flex; gap: 18px; justify-content: space-between; margin-bottom: 24px; }
+.breadcrumb { color: #748078; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; margin: 0 0 6px; }
+h1, h2 { color: #2a343a; margin-top: 0; }
+h1 { font-size: 24px; font-weight: 500; margin-bottom: 4px; }
+h2 { font-size: 18px; margin-bottom: 10px; }
+.page-description, .panel p { color: var(--muted); margin-bottom: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); padding: 14px; }
+.stats-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 18px; }
+.stat-card { background: var(--panel); border: 1px solid var(--line); min-height: 150px; padding: 20px; }
+.stat-card p { color: var(--muted); margin: 0 0 12px; }
+.stat-card strong { color: #26313a; display: block; font-size: 38px; font-weight: 500; line-height: 1; margin-bottom: 10px; }
+.stat-card span { color: #7d878e; font-size: 13px; }
+.overview-panel { align-items: center; display: flex; gap: 24px; justify-content: space-between; padding: 22px; }
+.button { border: 0; cursor: pointer; font-size: 14px; font-weight: 700; padding: 11px 16px; text-decoration: none; white-space: nowrap; }
+.button-dark { background: var(--dark-button); color: #ffffff; }
+.button-success { background: var(--green); color: #ffffff; }
+.button-danger { background: var(--red); color: #ffffff; }
+.button:hover { filter: brightness(0.92); }
+.panel-heading { align-items: flex-start; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 10px; }
+.panel-heading h2 { margin-bottom: 3px; }
+.panel-heading p { font-size: 14px; }
+.count-badge { background: var(--soft); color: #59656c; font-size: 13px; padding: 6px 9px; }
+.table-panel { padding: 16px 14px 14px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid var(--line); padding: 14px 12px; text-align: left; vertical-align: middle; }
+th { color: #6a747b; font-size: 13px; font-weight: 700; }
+td { color: #3c474e; }
+.user-name { color: #26313a; font-weight: 700; }
+.status-pill { display: inline-block; font-size: 13px; font-weight: 700; min-width: 72px; padding: 5px 8px; text-align: center; }
+.status-active { background: var(--green-bg); color: var(--green); }
+.status-inactive { background: var(--red-bg); color: var(--red); }
+.note-panel { border-left: 4px solid #bfc9c1; margin-top: 18px; padding: 18px; }
+.note-panel h2 { font-size: 16px; margin-bottom: 4px; }
+.alert { border: 1px solid; margin-bottom: 18px; padding: 12px 14px; }
+.alert-success { background: var(--green-bg); border-color: #b6dfc4; color: #1b633d; }
+.alert-error { background: var(--red-bg); border-color: #e8c2c2; color: #913c3c; }
+.split-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.split-grid .panel { min-width: 0; }
+.text-button { background: transparent; border: 0; color: #33414a; cursor: pointer; padding: 0; }
+.filter-test { margin-top: 18px; }
+.test-row { display: flex; gap: 12px; }
+.test-row input { border: 1px solid #ccd3d0; color: #657179; flex: 1; padding: 12px 14px; }
+.result-message { background: #f4f7f4; border-left: 4px solid #c3d0c5; font-size: 14px; margin-top: 12px; padding: 12px 14px; }
+
+/* ---------------------------------------------------------------------------
+   Added when the panel was mounted on the live database. Everything above is
+   as it was written; these cover the things real data brings that seeded data
+   did not -- long tables that need paging, numbers that need aligning, and
+   sections that have to say "not implemented" rather than show a figure.
+   --------------------------------------------------------------------------- */
+
+/* Figures line up column-wise only if the digits are the same width. */
+.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+th.num { text-align: right; }
+.muted { color: #8a949b; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+
+.toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.toolbar input[type="search"] { border: 1px solid #ccd3d0; flex: 1; min-width: 220px; padding: 9px 12px; }
+
+.pager { align-items: center; display: flex; gap: 12px; justify-content: flex-end; margin-top: 14px; }
+.pager a, .pager span { color: #5c6770; font-size: 13px; text-decoration: none; }
+.pager a { border: 1px solid var(--line); padding: 6px 12px; }
+.pager a:hover { background: var(--soft); }
+
+/* A bar whose width is a share of a total. Used for distributions, where the
+   shape matters more than the exact number beside it. */
+.bar { background: var(--soft); display: block; height: 8px; min-width: 2px; overflow: hidden; }
+.bar > i { background: #7d9c88; display: block; height: 100%; }
+/* Over the total. A distinct colour rather than a longer bar, because the bar
+   cannot get longer than its container and two different overshoots would
+   otherwise look identical. */
+.bar-over > i { background: #b4793f; }
+
+.status-admin { background: #e7eef5; color: #2d5577; }
+
+/* Sections describing something this project does not implement. Deliberately
+   plain: it is a statement, not a warning, and styling it as an error would
+   suggest something is broken. */
+.not-implemented { background: #fbfbfa; border-left: 4px solid #d6cdb4; padding: 16px 18px; }
+.not-implemented h2 { font-size: 15px; margin-bottom: 4px; }
+.not-implemented p { font-size: 14px; }
+
+.inline-form { display: inline; }
+.row-actions { display: flex; gap: 8px; justify-content: flex-end; white-space: nowrap; }
+.button-small { font-size: 12px; font-weight: 700; padding: 6px 10px; }
+.button-quiet { background: #e9eeea; color: #26313a; }
+
+.kv { border-collapse: collapse; width: 100%; }
+.kv th { color: #6a747b; font-weight: 700; padding: 10px 12px 10px 0; text-align: left; vertical-align: top; width: 40%; }
+.kv td { padding: 10px 0; }
+
+.empty { color: #8a949b; padding: 26px 12px; text-align: center; }
+
+/* A disabled action has to look disabled. The .button rules above set a
+   background and colour unconditionally, which overrides the browser's own
+   greying -- so "Block" on your own account rendered identically to a live
+   one and simply did nothing when clicked. */
+.button:disabled,
+.button[disabled] {
+    background: #eceeed;
+    border: 1px solid var(--line);
+    color: #a6afb4;
+    cursor: not-allowed;
+}
+.button:disabled:hover,
+.button[disabled]:hover { filter: none; }

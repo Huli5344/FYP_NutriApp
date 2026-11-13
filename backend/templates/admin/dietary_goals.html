@@ -1,0 +1,60 @@
+{% extends "admin/base.html" %}
+{% import "admin/_macros.html" as m %}
+
+{% block title %}Dietary goals | Nutri App admin{% endblock %}
+
+{% block content %}
+{{ m.heading("NUTRI APP / ADMINISTRATION / DIETARY GOALS", "Dietary goals",
+   "The goals the app offers, and how many accounts chose each.") }}
+
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div>
+            <h2>Goals</h2>
+            <p>The calorie adjustment is read from the server's own rules, not typed here.</p>
+        </div>
+        <span class="count-badge">{{ stats.with_profile }} profiles</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Goal</th>
+                    <th class="num">Adjustment</th>
+                    <th class="num">Accounts</th>
+                    <th class="num">Average target</th>
+                    <th>Share</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td class="user-name">{{ row.goal }}</td>
+                    <td class="num">
+                        {{ "{:+,}".format(row.adjustment) if row.adjustment else "none" }}
+                        {% if row.adjustment %}kcal{% endif %}
+                    </td>
+                    <td class="num">{{ row.users }}</td>
+                    <td class="num">
+                        {% if row.avg_target %}{{ row.avg_target | round | int }} kcal
+                        {% else %}<span class="muted">&mdash;</span>{% endif %}
+                    </td>
+                    <td style="width: 30%;">{{ m.bar(row.users, stats.with_profile) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel note-panel">
+    <h2>Where the adjustment is applied</h2>
+    <p>
+        A daily target starts from the Mifflin&ndash;St Jeor estimate, is
+        multiplied by the activity level, then has the goal's adjustment added.
+        The result is clamped before it is stored, so no goal can produce a
+        target outside the safe range. The Rules and metrics page lists the
+        figures.
+    </p>
+</section>
+{% endblock %}

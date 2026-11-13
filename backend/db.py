@@ -165,6 +165,32 @@ def is_postgres():
     return database_url() is not None
 
 
+def safe_target_description():
+    """Which database this process is pointed at, without the password.
+
+    For messages that have to name the target -- a refusal to drop tables, a
+    tool saying what it is about to change. The connection string contains the
+    Neon password, so it is never the thing to print: this gives host and
+    database name only.
+
+    Also names the file .env.local when that is where the URL came from, since
+    the usual way to end up pointed at production unexpectedly is a script run
+    from the folder that holds it.
+    """
+    url = database_url()
+    if url is None:
+        return f"SQLite ({SQLITE_PATH})"
+
+    # postgresql://user:password@host/dbname?params -- everything before and
+    # including '@' is credentials and is dropped rather than masked.
+    rest = url.split("@", 1)[-1]
+    host_and_db = rest.split("?", 1)[0]
+    where = ""
+    if LOADED_ENV_FILES:
+        where = f", configured by {', '.join(LOADED_ENV_FILES)}"
+    return f"PostgreSQL at {host_and_db}{where}"
+
+
 # ---------------------------------------------------------------- placeholders
 
 _TOKENS = re.compile(r"""('(?:[^']|'')*'|"(?:[^"]|"")*")|(\?)|(%)""")

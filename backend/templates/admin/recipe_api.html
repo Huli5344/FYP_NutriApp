@@ -1,0 +1,78 @@
+{% extends "admin/base.html" %}
+{% import "admin/_macros.html" as m %}
+
+{% block title %}Recipe service | Nutri App admin{% endblock %}
+
+{% block content %}
+{{ m.heading("NUTRI APP / ADMINISTRATION / RECIPE SERVICE", "Recipe service",
+   "Where meal suggestions come from, and what is stored locally.") }}
+
+<section class="stats-grid">
+    {{ m.stat("Local meals", recipes|length, "Used when the service is unreachable") }}
+    {{ m.stat("Cached responses", cached, "Expire after " ~ ttl ~ " hours") }}
+    {{ m.stat("Newest cache entry", (newest or "none")[:16]|replace("T", " "),
+              "From the api_cache table") }}
+</section>
+
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div>
+            <h2>Local meal pool</h2>
+            <p>Seeded with the module and used as the last step of the fallback chain.</p>
+        </div>
+        <span class="count-badge">{{ recipes|length }} meals</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Meal</th>
+                    <th class="num">kcal</th>
+                    <th class="num">Protein</th>
+                    <th class="num">Minutes</th>
+                    <th>Allergens</th>
+                    <th>Diets</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in recipes %}
+                <tr>
+                    <td class="user-name">{{ r.name }}</td>
+                    <td class="num">{{ r.kcal }}</td>
+                    <td class="num">{{ r.protein_g }}g</td>
+                    <td class="num">{{ r.minutes }}</td>
+                    <td>{{ r.allergens or "none declared" }}</td>
+                    <td class="muted">{{ r.diet_types or "&mdash;" | safe }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="empty">No local meals stored.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel not-implemented">
+    <h2>This project uses TheMealDB, not Edamam</h2>
+    <p>
+        The panel originally had a sync button that called the Edamam
+        Nutrition API and wrote the results into a recipe table. This project
+        does not use Edamam, and its nutrition figures come from the Health
+        Promotion Board dataset rather than from any recipe service. Meal
+        suggestions come from TheMealDB, whose calorie figures are estimated
+        from the ingredient list &mdash; which is why the app labels them as
+        estimated wherever they appear.
+    </p>
+    <p style="margin-top: 10px;">
+        There is no import button here because an import would write estimated
+        figures into the same table as published ones, and nothing downstream
+        could tell them apart. The chain is: TheMealDB, then the cache, then
+        the local meals above.
+    </p>
+</section>
+
+<section class="panel note-panel">
+    <h2>Attribution</h2>
+    <p>{{ attribution }}</p>
+</section>
+{% endblock %}

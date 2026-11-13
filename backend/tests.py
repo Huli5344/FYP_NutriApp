@@ -1,17 +1,51 @@
 """
 Unit tests for the Diary and Recommendations module.
 
-Run:  python tests.py
+Run:  python -m unittest tests
 
-These cover logic.py, which holds every rule the module calculates. They need
-neither Flask nor the database, so they run in well under a second and can be
-shown working without starting the app.
+These cover logic.py, which holds every rule the module calculates, plus the
+server, the sync protocol and the admin panel.
 """
 
-import unittest
-from datetime import datetime
+# ---------------------------------------------------------------------------
+# Pin the tests to a throwaway SQLite file, BEFORE importing anything from the
+# project.
+#
+# This is not a convenience. Many tests below call database.init(force=True),
+# which drops every table; db.py reads .env.local at import time, and that
+# file holds the Neon connection string. Run from the backend folder with
+# .env.local present, the suite therefore pointed itself at the production
+# database and dropped it once per test class.
+#
+# Setting the variables to empty strings is what stops it: load_env_files()
+# only fills a key that is "not in os.environ", so a key already present --
+# even empty -- is left alone, and _env_url() reads an empty string as
+# "no URL configured", which means SQLite.
+#
+# Ordering is the whole trick, so nothing from the project may be imported
+# above this block. The assertion underneath is what makes a future edit that
+# moves an import fail here rather than against Neon.
+# ---------------------------------------------------------------------------
+import os
+import tempfile
 
-import logic
+os.environ["DATABASE_URL"] = ""
+os.environ["DATABASE_URL_UNPOOLED"] = ""
+
+import db  # noqa: E402
+
+assert not db.is_postgres(), (
+    "The test suite is pointed at PostgreSQL. It calls init(force=True), "
+    "which drops every table, so it must only ever run against a scratch "
+    "SQLite file. Something set DATABASE_URL after this module began "
+    "importing.")
+
+db.SQLITE_PATH = os.path.join(tempfile.gettempdir(), "nutriapp_tests.db")
+
+import unittest  # noqa: E402
+from datetime import datetime  # noqa: E402
+
+import logic  # noqa: E402
 
 
 class TestCalorieCalculation(unittest.TestCase):
@@ -1840,3 +1874,719 @@ class TestUrlSelectionIsSymmetric(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ---------------------------------------------------------------------------
+# The admin panel.
+#
+# The panel can read every account and block any of them, so the tests that
+# matter most are the ones about who is refused. A rendering bug shows itself
+# the first time somebody clicks; a gate that is open shows itself much later,
+# or not at all.
+# ---------------------------------------------------------------------------
+
+
+class TestAdminAccessGate(unittest.TestCase):
+    """Who can open /admin, and what everyone else sees instead."""
+
+    # Every page in the blueprint. Listed rather than discovered, so a route
+    # added without a thought about access makes this list wrong on purpose.
+    PAGES = [
+        "/admin/", "/admin/users", "/admin/preferences",
+        "/admin/section/dietary-goals", "/admin/section/food-database",
+        "/admin/section/categories-and-tags",
+        "/admin/section/rules-and-metrics", "/admin/section/reports",
+        "/admin/section/security-log", "/admin/section/roles-and-access",
+        "/admin/section/recipe-api",
+    ]
+
+    def setUp(self):
+        import app
+        import database
+        database.init(force=True)
+        app.app.config["TESTING"] = True
+        self.app = app.app
+        self.database = database
+        self.client = app.app.test_client()
+
+    def register(self, email, password="testpass123", name="Person"):
+        body = self.client.post("/api/register", json={
+            "email": email, "password": password, "name": name}).get_json()
+        return body["user"]["id"]
+
+    def make_admin(self, user_id, value=True):
+        conn = self.database.connect()
+        try:
+            self.database.admin_set_admin(conn, user_id, value)
+        finally:
+            conn.close()
+
+    def sign_in(self, client, email, password="testpass123"):
+        return client.post("/login",
+                           data={"email": email, "password": password})
+
+    def test_every_route_is_listed_in_this_test(self):
+        """The gate is tested by path, so an untested path is a hole.
+
+        Flask knows every route it registered; this compares that against the
+        list above, so a page added to the blueprint without being added here
+        fails rather than quietly going untested.
+        """
+        registered = {
+            str(rule) for rule in self.app.url_map.iter_rules()
+            if rule.endpoint.startswith("admin.")
+            and "GET" in (rule.methods or set())
+            and "<" not in str(rule)        # detail pages take an id
+        }
+        self.assertEqual(registered, set(self.PAGES))
+
+    def test_anonymous_is_sent_to_sign_in(self):
+        for path in self.PAGES:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertTrue(
+                    response.headers["Location"].startswith("/login"))
+
+    def test_an_ordinary_account_gets_404_not_403(self):
+        """404, so the panel's existence is not confirmed to non-staff.
+
+        403 would say "this exists and you are not on the list", which is a
+        fact worth not handing out. To an ordinary account the panel is
+        absent, not forbidden.
+        """
+        self.register("plain@test.com")
+        with self.app.test_client() as client:
+            self.sign_in(client, "plain@test.com")
+            for path in self.PAGES:
+                with self.subTest(path=path):
+                    self.assertEqual(client.get(path).status_code, 404)
+
+    def test_an_administrator_reaches_every_page(self):
+        admin_id = self.register("boss@test.com")
+        self.make_admin(admin_id)
+        with self.app.test_client() as client:
+            self.sign_in(client, "boss@test.com")
+            for path in self.PAGES:
+                with self.subTest(path=path):
+                    self.assertEqual(client.get(path).status_code, 200)
+
+    def test_an_administrator_needs_no_profile(self):
+        """A staff account that never used the app as a diary still gets in.
+
+        The app sends anyone without a profile to the setup screen, because
+        its other pages measure against a target. The panel measures nothing,
+        so it is exempt -- without this, an administrator would have to invent
+        a weight goal before they could look at the user list.
+        """
+        admin_id = self.register("boss@test.com")
+        self.make_admin(admin_id)
+        with self.app.test_client() as client:
+            self.sign_in(client, "boss@test.com")
+            response = client.get("/admin/", follow_redirects=False)
+            self.assertEqual(response.status_code, 200)
+
+    def test_revoking_admin_closes_the_panel_on_the_next_request(self):
+        """Not at the next sign-in: on the next click."""
+        admin_id = self.register("boss@test.com")
+        self.make_admin(admin_id)
+        with self.app.test_client() as client:
+            self.sign_in(client, "boss@test.com")
+            self.assertEqual(client.get("/admin/").status_code, 200)
+            self.make_admin(admin_id, False)
+            self.assertEqual(client.get("/admin/").status_code, 404)
+
+    def test_an_ordinary_account_cannot_post_an_action(self):
+        """The gate covers POST, not only the pages it is visible on."""
+        victim = self.register("boss@test.com")
+        self.make_admin(victim)
+        self.register("plain@test.com")
+
+        with self.app.test_client() as client:
+            self.sign_in(client, "plain@test.com")
+            response = client.post("/admin/users/action", data={
+                "action": "disable", "user_id": victim})
+            self.assertEqual(response.status_code, 404)
+
+        conn = self.database.connect()
+        try:
+            row = conn.execute("SELECT disabled, is_admin FROM users"
+                               " WHERE id=?", (victim,)).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["disabled"], 0)
+        self.assertEqual(row["is_admin"], 1)
+
+    def test_an_anonymous_post_cannot_promote_anyone(self):
+        plain = self.register("plain@test.com")
+        response = self.client.post("/admin/users/action", data={
+            "action": "promote", "user_id": plain})
+        self.assertEqual(response.status_code, 302)
+
+        conn = self.database.connect()
+        try:
+            row = conn.execute("SELECT is_admin FROM users WHERE id=?",
+                               (plain,)).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["is_admin"], 0)
+
+
+class TestBlockingAnAccount(unittest.TestCase):
+    """Blocking has to stop sign-in, not just change a pill in the panel."""
+
+    def setUp(self):
+        import app
+        import database
+        database.init(force=True)
+        app.app.config["TESTING"] = True
+        self.app = app.app
+        self.database = database
+        self.client = app.app.test_client()
+
+    def register(self, email, password="testpass123", name="Person"):
+        body = self.client.post("/api/register", json={
+            "email": email, "password": password, "name": name}).get_json()
+        return body["user"]["id"], body["token"]
+
+    def block(self, user_id, value=True):
+        conn = self.database.connect()
+        try:
+            self.database.admin_set_disabled(conn, user_id, value)
+        finally:
+            conn.close()
+
+    def test_a_blocked_account_cannot_sign_in_through_the_api(self):
+        user_id, _ = self.register("blocked@test.com")
+        self.block(user_id)
+        response = self.client.post("/api/login", json={
+            "email": "blocked@test.com", "password": "testpass123"})
+        self.assertEqual(response.status_code, 403)
+        self.assertIsNone(response.get_json().get("token"))
+
+    def test_the_refusal_says_blocked_rather_than_wrong_password(self):
+        """Vagueness protects nobody once the password has been accepted.
+
+        The generic "email or password is incorrect" exists so an attacker
+        cannot learn which addresses are registered. That reason is spent by
+        the time the password has been verified, and telling a blocked person
+        their password is wrong sends them into a reset loop that cannot
+        possibly help.
+        """
+        user_id, _ = self.register("blocked@test.com")
+        self.block(user_id)
+        body = self.client.post("/api/login", json={
+            "email": "blocked@test.com", "password": "testpass123"}).get_json()
+        self.assertIn("blocked", body["error"].lower())
+
+    def test_a_wrong_password_on_a_blocked_account_stays_vague(self):
+        """Blocking must not turn the login into an account-existence oracle."""
+        user_id, _ = self.register("blocked@test.com")
+        self.block(user_id)
+        response = self.client.post("/api/login", json={
+            "email": "blocked@test.com", "password": "wrongpassword"})
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("blocked", response.get_json()["error"].lower())
+
+    def test_blocking_signs_out_every_device(self):
+        """The half that makes a block take effect at all.
+
+        Without it the account keeps working on every device already signed
+        in, for up to thirty days, while the panel shows it as blocked.
+        """
+        user_id, token = self.register("blocked@test.com")
+        headers = {"Authorization": f"Bearer {token}"}
+        self.assertEqual(self.client.get("/api/me", headers=headers)
+                         .status_code, 200)
+
+        self.block(user_id)
+        self.assertEqual(self.client.get("/api/me", headers=headers)
+                         .status_code, 401)
+
+    def test_an_existing_token_is_refused_even_if_its_session_survives(self):
+        """Belt and braces: the token path checks the flag itself.
+
+        admin_set_disabled deletes the sessions, so normally there is no token
+        left to present. This sets the flag directly, leaving the session in
+        place, to prove the check in user_for_token is load-bearing on its own
+        -- it is the backstop for any future path that disables an account
+        without going through admin_set_disabled.
+        """
+        user_id, token = self.register("blocked@test.com")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        conn = self.database.connect()
+        try:
+            conn.execute("UPDATE users SET disabled = 1 WHERE id = ?",
+                         (user_id,))
+            conn.commit()
+            still_there = conn.execute(
+                "SELECT COUNT(*) c FROM sessions WHERE user_id=?",
+                (user_id,)).fetchone()["c"]
+        finally:
+            conn.close()
+        self.assertEqual(still_there, 1)        # the session was not deleted
+
+        self.assertEqual(self.client.get("/api/me", headers=headers)
+                         .status_code, 401)
+
+    def test_blocking_actually_deletes_the_session_rows(self):
+        """Asserted directly, because 401 alone does not prove it.
+
+        Blocking is defended twice over: the session rows are deleted, and
+        user_for_token refuses a blocked account even if a token survives.
+        Either one on its own makes /api/me return 401 -- so a test that only
+        checks the status code passes with one of them removed, and the first
+        version of this class had exactly that hole.
+
+        This one looks at the sessions table. Its pair,
+        test_an_existing_token_is_refused_even_if_its_session_survives, sets
+        the flag without deleting anything and checks the other half. Between
+        them, removing either defence fails a test.
+        """
+        user_id, _ = self.register("blocked@test.com")
+
+        conn = self.database.connect()
+        try:
+            before = conn.execute(
+                "SELECT COUNT(*) c FROM sessions WHERE user_id=?",
+                (user_id,)).fetchone()["c"]
+        finally:
+            conn.close()
+        self.assertEqual(before, 1)
+
+        self.block(user_id)
+
+        conn = self.database.connect()
+        try:
+            after = conn.execute(
+                "SELECT COUNT(*) c FROM sessions WHERE user_id=?",
+                (user_id,)).fetchone()["c"]
+        finally:
+            conn.close()
+        self.assertEqual(after, 0)
+
+    def test_blocking_does_not_delete_anybody_elses_sessions(self):
+        blocked, _ = self.register("blocked@test.com")
+        other, _ = self.register("fine@test.com")
+        self.block(blocked)
+
+        conn = self.database.connect()
+        try:
+            left = conn.execute(
+                "SELECT COUNT(*) c FROM sessions WHERE user_id=?",
+                (other,)).fetchone()["c"]
+        finally:
+            conn.close()
+        self.assertEqual(left, 1)
+
+    def test_unblocking_restores_sign_in(self):
+        user_id, _ = self.register("blocked@test.com")
+        self.block(user_id)
+        self.block(user_id, False)
+        response = self.client.post("/api/login", json={
+            "email": "blocked@test.com", "password": "testpass123"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["token"])
+
+    def test_blocking_one_account_leaves_the_others_alone(self):
+        blocked, _ = self.register("blocked@test.com")
+        _, other_token = self.register("fine@test.com")
+        self.block(blocked)
+        response = self.client.get(
+            "/api/me", headers={"Authorization": f"Bearer {other_token}"})
+        self.assertEqual(response.status_code, 200)
+
+
+class TestAdminCannotLockEveryoneOut(unittest.TestCase):
+    """The two clicks that would close the panel permanently."""
+
+    def setUp(self):
+        import app
+        import database
+        database.init(force=True)
+        app.app.config["TESTING"] = True
+        self.app = app.app
+        self.database = database
+        self.client = app.app.test_client()
+
+    def register(self, email, password="testpass123", name="Person"):
+        body = self.client.post("/api/register", json={
+            "email": email, "password": password, "name": name}).get_json()
+        return body["user"]["id"]
+
+    def make_admin(self, user_id):
+        conn = self.database.connect()
+        try:
+            self.database.admin_set_admin(conn, user_id, True)
+        finally:
+            conn.close()
+
+    def flag(self, user_id, column):
+        conn = self.database.connect()
+        try:
+            return conn.execute(f"SELECT {column} FROM users WHERE id=?",
+                                (user_id,)).fetchone()[column]
+        finally:
+            conn.close()
+
+    def test_the_last_administrator_cannot_be_demoted(self):
+        """Demoting them leaves a panel nobody can open.
+
+        The only way back would be the command line against the production
+        database, which on a free host is a worse afternoon than this check is
+        worth avoiding.
+        """
+        admin_id = self.register("boss@test.com")
+        self.make_admin(admin_id)
+        with self.app.test_client() as client:
+            client.post("/login", data={"email": "boss@test.com",
+                                        "password": "testpass123"})
+            client.post("/admin/users/action", data={
+                "action": "demote", "user_id": admin_id})
+        self.assertEqual(self.flag(admin_id, "is_admin"), 1)
+
+    def test_demotion_is_allowed_once_there_is_a_second_administrator(self):
+        first = self.register("boss@test.com")
+        second = self.register("deputy@test.com", name="Deputy")
+        self.make_admin(first)
+        self.make_admin(second)
+        with self.app.test_client() as client:
+            client.post("/login", data={"email": "boss@test.com",
+                                        "password": "testpass123"})
+            client.post("/admin/users/action", data={
+                "action": "demote", "user_id": second})
+        self.assertEqual(self.flag(second, "is_admin"), 0)
+        self.assertEqual(self.flag(first, "is_admin"), 1)
+
+    def test_an_administrator_cannot_block_themselves(self):
+        """Blocking yourself also deletes your sessions.
+
+        So the click that did it would sign you out of the only page that can
+        undo it -- and if you were the only administrator, nothing could.
+        """
+        admin_id = self.register("boss@test.com")
+        self.make_admin(admin_id)
+        with self.app.test_client() as client:
+            client.post("/login", data={"email": "boss@test.com",
+                                        "password": "testpass123"})
+            client.post("/admin/users/action", data={
+                "action": "disable", "user_id": admin_id})
+        self.assertEqual(self.flag(admin_id, "disabled"), 0)
+
+    def test_an_administrator_can_block_somebody_else(self):
+        admin_id = self.register("boss@test.com")
+        other = self.register("plain@test.com")
+        self.make_admin(admin_id)
+        with self.app.test_client() as client:
+            client.post("/login", data={"email": "boss@test.com",
+                                        "password": "testpass123"})
+            client.post("/admin/users/action", data={
+                "action": "disable", "user_id": other})
+        self.assertEqual(self.flag(other, "disabled"), 1)
+
+
+class TestAdminPagesShowRealData(unittest.TestCase):
+    """The panel's whole purpose: these are counts of rows, not fixtures."""
+
+    def setUp(self):
+        import app
+        import database
+        database.init(force=True)
+        app.app.config["TESTING"] = True
+        self.app = app.app
+        self.database = database
+        self.client = app.app.test_client()
+
+        body = self.client.post("/api/register", json={
+            "email": "boss@test.com", "password": "testpass123",
+            "name": "Boss Person"}).get_json()
+        self.admin_id = body["user"]["id"]
+        conn = self.database.connect()
+        try:
+            self.database.admin_set_admin(conn, self.admin_id, True)
+        finally:
+            conn.close()
+
+    def as_admin(self):
+        client = self.app.test_client()
+        client.post("/login", data={"email": "boss@test.com",
+                                    "password": "testpass123"})
+        return client
+
+    def page(self, path):
+        return self.as_admin().get(path).get_data(as_text=True)
+
+    def test_a_new_account_appears_on_the_user_list(self):
+        before = self.page("/admin/users")
+        self.assertNotIn("newcomer@test.com", before)
+
+        self.client.post("/api/register", json={
+            "email": "newcomer@test.com", "password": "testpass123",
+            "name": "New Comer"})
+
+        after = self.page("/admin/users")
+        self.assertIn("newcomer@test.com", after)
+        self.assertIn("New Comer", after)
+
+    def test_an_account_without_a_profile_is_shown_as_such(self):
+        """These are exactly the accounts an admin is looking for.
+
+        A LEFT JOIN is what keeps them visible; an inner join would drop
+        every account that registered and never finished setup, which is the
+        most interesting row on the page.
+        """
+        self.client.post("/api/register", json={
+            "email": "quitter@test.com", "password": "testpass123",
+            "name": "Quit Early"})
+        body = self.page("/admin/users")
+        self.assertIn("Quit Early", body)
+        self.assertIn("Setup not finished", body)
+
+    def test_none_of_the_original_seeded_users_survived(self):
+        """The panel shipped with five fictional people in it.
+
+        They were the point of the integration: an admin panel showing
+        invented accounts is a screenshot, not a tool. If any of these names
+        can appear on the page, the seed data came along with the templates.
+        """
+        body = self.page("/admin/users")
+        for ghost in ("Aisha Rahman", "Marcus Tan", "Nur Izzati",
+                      "Daniel Lim", "Mei Ling Wong", "supa_"):
+            with self.subTest(ghost=ghost):
+                self.assertNotIn(ghost, body)
+
+    def test_the_search_box_escapes_like_wildcards(self):
+        """Unescaped, a search for '%' lists every account.
+
+        Which is not a data leak here -- the admin may list them anyway -- but
+        it is the same escaping bug that makes '_' match any character, and a
+        search box that silently ignores its own input is a search box nobody
+        can trust.
+        """
+        self.client.post("/api/register", json={
+            "email": "someone@test.com", "password": "testpass123",
+            "name": "Some One"})
+        conn = self.database.connect()
+        try:
+            self.assertEqual(self.database.admin_user_count(conn, "%"), 0)
+            self.assertEqual(self.database.admin_user_count(conn, "a_c"), 0)
+            self.assertEqual(self.database.admin_user_count(conn, "someone"), 1)
+        finally:
+            conn.close()
+
+    def test_the_overview_counts_move_when_a_meal_is_logged(self):
+        body = self.client.post("/api/register", json={
+            "email": "eater@test.com", "password": "testpass123",
+            "name": "Eater"}).get_json()
+        headers = {"Authorization": f"Bearer {body['token']}"}
+
+        conn = self.database.connect()
+        try:
+            before = self.database.admin_overview(conn)["entries"]
+        finally:
+            conn.close()
+
+        self.client.post("/sync", headers=headers, json={
+            "since": 0, "weights": [], "profile": None, "custom_foods": [],
+            "changes": [{
+                "id": "bbbb2222-0000-4000-8000-000000000001",
+                "food_id": None, "food_name": "Laksa", "quantity": 1.0,
+                "serving": "1 bowl", "kcal": 701, "carbs_g": 62.3,
+                "protein_g": 24.8, "fat_g": 38.1, "category": "dinner",
+                "tags": "", "note": "", "eaten_at": "2026-11-12T19:00:00",
+                "source": "manual", "deleted": 0,
+                "updated_at": "2026-11-12T19:01:00Z"}]})
+
+        conn = self.database.connect()
+        try:
+            after = self.database.admin_overview(conn)["entries"]
+        finally:
+            conn.close()
+        self.assertEqual(after, before + 1)
+        self.assertIn("Laksa", self.page("/admin/"))
+
+    def test_a_deleted_meal_stops_being_counted(self):
+        """Tombstones are rows, but they are not food anybody ate."""
+        body = self.client.post("/api/register", json={
+            "email": "eater@test.com", "password": "testpass123",
+            "name": "Eater"}).get_json()
+        headers = {"Authorization": f"Bearer {body['token']}"}
+        entry = {
+            "id": "cccc3333-0000-4000-8000-000000000001",
+            "food_id": None, "food_name": "Laksa", "quantity": 1.0,
+            "serving": "1 bowl", "kcal": 701, "carbs_g": 62.3,
+            "protein_g": 24.8, "fat_g": 38.1, "category": "dinner",
+            "tags": "", "note": "", "eaten_at": "2026-11-12T19:00:00",
+            "source": "manual", "deleted": 0,
+            "updated_at": "2026-11-12T19:01:00Z"}
+        self.client.post("/sync", headers=headers, json={
+            "since": 0, "weights": [], "profile": None, "custom_foods": [],
+            "changes": [entry]})
+
+        conn = self.database.connect()
+        try:
+            with_entry = self.database.admin_overview(conn)["entries"]
+        finally:
+            conn.close()
+
+        self.client.post("/sync", headers=headers, json={
+            "since": 0, "weights": [], "profile": None, "custom_foods": [],
+            "changes": [{**entry, "deleted": 1,
+                         "updated_at": "2026-11-12T20:00:00Z"}]})
+
+        conn = self.database.connect()
+        try:
+            after_delete = self.database.admin_overview(conn)["entries"]
+        finally:
+            conn.close()
+        self.assertEqual(after_delete, with_entry - 1)
+
+    def test_the_rules_page_reads_the_real_constants(self):
+        """Read from logic.py at render time, so the page cannot drift.
+
+        If this ever fails because a constant changed, the page is right and
+        the test needs the new number -- which is the point.
+        """
+        import logic
+        body = self.page("/admin/section/rules-and-metrics")
+        self.assertIn("{:,}".format(logic.MIN_DAILY_TARGET), body)
+        self.assertIn("{:,}".format(logic.MAX_DAILY_TARGET), body)
+        for level in logic.ACTIVITY_MULTIPLIERS:
+            with self.subTest(level=level):
+                self.assertIn(level, body)
+
+    def test_the_sessions_page_lists_a_real_sign_in(self):
+        self.client.post("/api/register", json={
+            "email": "phone@test.com", "password": "testpass123",
+            "name": "Phone Owner"})
+        body = self.page("/admin/section/security-log")
+        self.assertIn("phone@test.com", body)
+
+    def test_an_expired_session_is_not_listed_as_a_way_in(self):
+        import accounts
+        self.client.post("/api/register", json={
+            "email": "stale@test.com", "password": "testpass123",
+            "name": "Stale Session"})
+        conn = self.database.connect()
+        try:
+            conn.execute(
+                "UPDATE sessions SET expires_at = ? WHERE user_id ="
+                " (SELECT id FROM users WHERE email = ?)",
+                ("2020-01-01T00:00:00+00:00", "stale@test.com"))
+            conn.commit()
+        finally:
+            conn.close()
+        body = self.page("/admin/section/security-log")
+        self.assertNotIn("stale@test.com", body)
+
+    def test_an_unknown_user_id_redirects_rather_than_crashing(self):
+        response = self.as_admin().get("/admin/users/no-such-account")
+        self.assertEqual(response.status_code, 302)
+
+
+class TestDestructiveInitIsRefusedOnPostgres(unittest.TestCase):
+    """The guard on init(force=True).
+
+    This exists because the accident happened. Running `python -m unittest
+    tests` from the backend folder pointed the suite at Neon -- db.py loads
+    .env.local at import -- and every test class that called
+    init(force=True) dropped the production tables.
+
+    Two defences, and a test for each: init() refuses the destructive path
+    against Postgres unless explicitly told otherwise, and tests.py pins
+    itself to a scratch SQLite file before importing anything.
+    """
+
+    FAKE = ("postgresql://nutri:secret@ep-example-123.ap-southeast-1"
+            ".aws.neon.tech/nutriapp?sslmode=require")
+
+    def setUp(self):
+        self.saved = {k: os.environ.get(k) for k in
+                      ("DATABASE_URL", "DATABASE_URL_UNPOOLED",
+                       "NUTRIAPP_ALLOW_DESTRUCTIVE")}
+
+    def tearDown(self):
+        for key, value in self.saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    def point_at_postgres(self):
+        os.environ["DATABASE_URL"] = self.FAKE
+        os.environ["DATABASE_URL_UNPOOLED"] = self.FAKE
+        os.environ.pop("NUTRIAPP_ALLOW_DESTRUCTIVE", None)
+
+    def test_force_is_refused_against_postgres(self):
+        import database
+        self.point_at_postgres()
+        with self.assertRaises(RuntimeError) as caught:
+            database.init(force=True)
+        self.assertIn("Refusing to drop every table", str(caught.exception))
+
+    def test_the_refusal_happens_before_connecting(self):
+        """So an unreachable database still explains itself.
+
+        The host above does not exist. If the check ran after connect(), this
+        would be a connection error naming nothing useful -- which is what
+        the first version of the guard did.
+        """
+        import database
+        self.point_at_postgres()
+        with self.assertRaises(RuntimeError) as caught:
+            database.init(force=True)
+        message = str(caught.exception)
+        self.assertIn("ep-example-123", message)
+        self.assertIn(".env.local", message)
+
+    def test_the_refusal_does_not_print_the_password(self):
+        import database
+        self.point_at_postgres()
+        with self.assertRaises(RuntimeError) as caught:
+            database.init(force=True)
+        self.assertNotIn("secret", str(caught.exception))
+
+    def test_an_explicit_opt_in_is_honoured(self):
+        """Rebuilding a database on purpose has to stay possible.
+
+        The guard is against doing it by accident, not against doing it. With
+        the variable set, init() gets past the check and fails on the
+        connection instead -- which is as far as this test can go without a
+        real Postgres to drop.
+        """
+        import database
+        self.point_at_postgres()
+        os.environ["NUTRIAPP_ALLOW_DESTRUCTIVE"] = "1"
+        with self.assertRaises(Exception) as caught:
+            database.init(force=True)
+        self.assertNotIn("Refusing to drop", str(caught.exception))
+
+    def test_init_without_force_is_not_blocked(self):
+        """What Render's build step runs. It must never be refused."""
+        import database
+        self.point_at_postgres()
+        with self.assertRaises(Exception) as caught:
+            database.init()
+        self.assertNotIn("Refusing to drop", str(caught.exception))
+
+    def test_force_still_works_against_sqlite(self):
+        """Where it is free, and where every other test relies on it."""
+        import database
+        self.assertFalse(db.is_postgres())
+        database.init(force=True)
+        conn = database.connect()
+        try:
+            self.assertEqual(database.admin_user_count(conn), 0)
+        finally:
+            conn.close()
+
+    def test_this_suite_is_pinned_to_sqlite(self):
+        """The guard at the top of this file, asserted as a test.
+
+        If a future edit moves an import above that block, or something sets
+        DATABASE_URL during collection, this fails rather than the tests
+        quietly running against a real database.
+        """
+        self.assertFalse(db.is_postgres())
+        self.assertNotIn("module.db", db.SQLITE_PATH)

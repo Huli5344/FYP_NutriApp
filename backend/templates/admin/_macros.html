@@ -1,0 +1,65 @@
+{# Fragments every page reuses, so a figure is written the same way wherever
+   it appears. #}
+
+{% macro heading(crumb, title, description) %}
+<div class="page-heading">
+    <div>
+        <p class="breadcrumb">{{ crumb }}</p>
+        <h1>{{ title }}</h1>
+        <p class="page-description">{{ description }}</p>
+    </div>
+</div>
+{% endmacro %}
+
+{% macro stat(label, value, subtext) %}
+<article class="stat-card">
+    <p>{{ label }}</p>
+    <strong>{{ "{:,}".format(value) if value is number else value }}</strong>
+    <span>{{ subtext }}</span>
+</article>
+{% endmacro %}
+
+{# A proportion bar. `total` of zero draws an empty bar rather than dividing
+   by zero -- an empty database is a normal state for a new deployment, not an
+   error page.
+
+   Anything over the total is drawn full width and coloured differently. The
+   first version let the width exceed 100%, which the container clipped: a day
+   at 121% of target and one at 130% both rendered as a full bar, identical to
+   a day exactly on target. Over is the case somebody is scanning this column
+   for, so it has to be the one that stands out. #}
+{% macro bar(value, total) %}
+{% set pct = (100.0 * value / total) if total else 0 %}
+<span class="bar{{ ' bar-over' if pct > 100 else '' }}"
+      title="{{ pct | round | int }}% of {{ total }}">
+    <i style="width: {{ 100 if pct > 100 else pct }}%"></i>
+</span>
+{% endmacro %}
+
+{% macro pager(paging, endpoint, q) %}
+{% if paging.pages > 1 %}
+<div class="pager">
+    <span>{{ "{:,}".format(paging.total) }} rows &middot; page {{ paging.page }} of {{ paging.pages }}</span>
+    {% if paging.has_prev %}
+        <a href="{{ url_for(endpoint, q=q, page=paging.page - 1) }}">Previous</a>
+    {% endif %}
+    {% if paging.has_next %}
+        <a href="{{ url_for(endpoint, q=q, page=paging.page + 1) }}">Next</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro searchbar(endpoint, q, placeholder) %}
+<form class="toolbar" method="GET" action="{{ url_for(endpoint) }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ placeholder }}">
+    <button class="button button-dark button-small" type="submit">Search</button>
+    {% if q %}<a class="button button-quiet button-small" href="{{ url_for(endpoint) }}">Clear</a>{% endif %}
+</form>
+{% endmacro %}
+
+{# Dates are stored as ISO strings. Showing the first ten characters is the
+   calendar day without parsing anything, and parsing is what would break on
+   the one row written by a client with an unusual timezone format. #}
+{% macro day(value) %}{{ (value or "")[:10] or "--" }}{% endmacro %}
+{% macro moment(value) %}{{ (value or "")[:16].replace("T", " ") or "--" }}{% endmacro %}

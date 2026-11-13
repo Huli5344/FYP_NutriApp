@@ -23,6 +23,8 @@ Two tables hold reference data and the rest hold user data:
     account's diary.
 """
 
+import os
+
 import db
 
 # Used by the web prototype before a profile has been saved, so the dashboard
@@ -51,12 +53,22 @@ DEFAULT_PROFILE = {
 }
 
 SCHEMA = """
+-- `is_admin` and `disabled` are the admin panel's two powers over an account,
+-- and they are deliberately columns on `users` rather than a second accounts
+-- system. An admin signs in with their ordinary account and ordinary
+-- password, so there is one password policy, one hash, one session table and
+-- one thing to get right. A separate admin login would be a second set of
+-- credentials protecting more, written later and tested less.
+--
+-- Both are checked at sign-in and on every admin request. See ADMIN.md.
 CREATE TABLE IF NOT EXISTS users (
     id            {text} PRIMARY KEY,
     email         {text} NOT NULL UNIQUE,
     name          {text} NOT NULL,
     password_hash {text} NOT NULL,
-    created_at    {text} NOT NULL
+    created_at    {text} NOT NULL,
+    is_admin      {int} NOT NULL DEFAULT 0,
+    disabled      {int} NOT NULL DEFAULT 0
 );
 
 -- A random token per signed-in device. Deleting the row signs that device
@@ -342,6 +354,42 @@ SCHEMA_MARKERS = {
 }
 
 
+# Columns added to a table that already exists in deployment. `CREATE TABLE
+# IF NOT EXISTS` sees the table, skips it, and the new column never appears --
+# so every column added after the first deploy needs an entry here.
+#
+# Each is (table, column, type-and-default). Additive only: no entry here may
+# drop, rename or retype anything, because this runs unattended in Render's
+# build step against the live database. A change that cannot be expressed as
+# "add a column with a default" belongs in SCHEMA_MARKERS instead, where it
+# stops the deploy and asks for a human.
+ADDED_COLUMNS = [
+    ("users", "is_admin", "{int} NOT NULL DEFAULT 0"),
+    ("users", "disabled", "{int} NOT NULL DEFAULT 0"),
+]
+
+
+def add_missing_columns(conn):
+    """Apply ADDED_COLUMNS to a database that predates them. Idempotent.
+
+    Returns the columns it added, so init() can say so rather than migrating
+    the production database silently.
+    """
+    added = []
+    for table, column, column_type in ADDED_COLUMNS:
+        if not db.table_exists(conn, table):
+            continue            # a fresh database; SCHEMA already has it
+        if column in db.columns(conn, table):
+            continue
+        rendered = column_type.format(
+            **db.TYPES["postgres" if db.is_postgres() else "sqlite"])
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {rendered}")
+        added.append(f"{table}.{column}")
+    if added:
+        conn.commit()
+    return added
+
+
 class SchemaOutOfDate(RuntimeError):
     """Raised when an existing database has an older, incompatible schema."""
 
@@ -385,15 +433,56 @@ def init(force=False):
               "         Set DATABASE_URL_UNPOOLED to the direct string, or "
               "run `neon env pull`, which writes both.")
     if force and not db.is_postgres():
-        import os
+        # `os` is imported at module level. A second `import os` here would
+        # make the name function-local for the whole of init(), leaving it
+        # unbound at the guard below -- which is exactly what it did, turning
+        # a clear refusal into an UnboundLocalError.
         if os.path.exists(db.SQLITE_PATH):
             os.remove(db.SQLITE_PATH)
+
+    if force and db.is_postgres():
+        # `force` drops every table. Against SQLite that costs a development
+        # file; against Postgres it is the live database, and the only thing
+        # that stood between the two was which environment variables happened
+        # to be set when the process started.
+        #
+        # db.py loads .env.local at import, so a script run from backend/ is
+        # pointed at Neon without saying so. Running the test suite from that
+        # folder therefore dropped the production tables once per test class.
+        # That is not a mistake anybody should be able to make by running a
+        # command that reads as read-only.
+        #
+        # So the destructive path now has to be asked for out loud. Tests run
+        # against SQLite, where force is free; the one legitimate use against
+        # Postgres is rebuilding a database deliberately, which is worth an
+        # extra word on the command line.
+        #
+        # Checked before opening the connection, so an unreachable database
+        # gives this explanation rather than a connection error that says
+        # nothing about what was about to happen.
+        if os.environ.get("NUTRIAPP_ALLOW_DESTRUCTIVE", "").lower() not in (
+                "1", "yes", "true"):
+            raise RuntimeError(
+                "Refusing to drop every table in a PostgreSQL database.\n"
+                f"  Target: {db.safe_target_description()}\n"
+                "\n"
+                "init(force=True) runs DROP TABLE on users, profile, entries,\n"
+                "weights, foods and the rest. Something pointed this process\n"
+                "at Postgres -- usually backend/.env.local, which db.py loads\n"
+                "automatically.\n"
+                "\n"
+                "If you are running tests, run them from a folder without an\n"
+                ".env.local, or let tests.py force SQLite as it now does.\n"
+                "\n"
+                "If you really did mean to wipe this database, set\n"
+                "NUTRIAPP_ALLOW_DESTRUCTIVE=1 and run it again.")
 
     # Schema work goes over the direct connection, never the pooled one.
     conn = connect(for_migration=True)
     if force and db.is_postgres():
         for table in ("sessions", "shown", "weights", "entries", "profile",
-                      "api_cache", "recipes", "foods", "meta", "users"):
+                      "custom_foods", "api_cache", "recipes", "foods", "meta",
+                      "users"):
             conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
         conn.commit()
 
@@ -401,6 +490,12 @@ def init(force=False):
         check_schema(conn)
 
     conn.executescript(db.render_schema(SCHEMA))
+
+    # Tables that already existed were skipped above, so columns added after
+    # the first deploy are applied here.
+    for column in add_missing_columns(conn):
+        print(f"added column {column}")
+
     if not conn.execute("SELECT 1 FROM recipes LIMIT 1").fetchone():
         conn.executemany(
             "INSERT INTO recipes (name,kcal,carbs_g,protein_g,fat_g,minutes,"
@@ -588,3 +683,331 @@ def recipe_dicts(rows):
         "diet_types": [d for d in (r["diet_types"] or "").split(",") if d],
         "ingredients": [i for i in (r["ingredients"] or "").split("|") if i],
     } for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Admin panel reads.
+#
+# Every figure the panel shows is counted here, from the live database, at the
+# moment the page is drawn. None of it is cached and none of it is seeded:
+# an admin page that says 41 accounts is saying there are 41 rows in `users`.
+# That is the whole point of the panel, so a stale or invented number would
+# be worse than no number.
+#
+# These are reads. The two writes an admin has over an account -- disable and
+# promote -- are the last two functions, and nothing here deletes anything.
+# ---------------------------------------------------------------------------
+
+def _day_cutoff(days):
+    """The ISO date `days` ago, for comparing against a stored date string.
+
+    Dates are stored as ISO text, so `substr(col, 1, 10) >= '2026-11-06'`
+    compares them correctly without either engine's date functions -- SQLite
+    has date(), Postgres does not, and the portable form is plain string
+    comparison on a fixed-width prefix.
+    """
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+
+
+def admin_overview(conn):
+    """The counts behind the overview page."""
+    # Rows come back as dicts, not tuples, so every count is aliased and read
+    # by name. `SELECT COUNT(*)` with no alias gives a key that differs
+    # between the two engines, and row[0] does not work on a dict at all.
+    def one(sql, *args):
+        row = conn.execute(sql, args).fetchone()
+        return (row["n"] if row else 0) or 0
+
+    week = _day_cutoff(7)
+    return {
+        "users": one("SELECT COUNT(*) AS n FROM users"),
+        "admins": one("SELECT COUNT(*) AS n FROM users WHERE is_admin = 1"),
+        "disabled": one("SELECT COUNT(*) AS n FROM users WHERE disabled = 1"),
+        "with_profile": one("SELECT COUNT(*) AS n FROM profile"),
+        "foods": one("SELECT COUNT(*) AS n FROM foods"),
+        "recipes": one("SELECT COUNT(*) AS n FROM recipes"),
+        # Tombstoned rows are still rows, but they are not food anybody ate.
+        "entries": one("SELECT COUNT(*) AS n FROM entries WHERE deleted = 0"),
+        "entries_week": one(
+            "SELECT COUNT(*) AS n FROM entries WHERE deleted = 0"
+            " AND substr(eaten_at, 1, 10) >= ?", week),
+        "weights": one("SELECT COUNT(*) AS n FROM weights WHERE deleted = 0"),
+        "custom_foods": one(
+            "SELECT COUNT(*) AS n FROM custom_foods WHERE deleted = 0"),
+        # Signed-in devices, not people: one account on a phone and a tablet
+        # is two. Expired rows are excluded rather than counted as sessions.
+        "sessions": one(
+            "SELECT COUNT(*) AS n FROM sessions WHERE expires_at > ?",
+            now_iso_utc()),
+        "active_week": one(
+            "SELECT COUNT(DISTINCT user_id) AS n FROM entries"
+            " WHERE deleted = 0 AND substr(eaten_at, 1, 10) >= ?", week),
+    }
+
+
+def now_iso_utc():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# A LIKE pattern is built from user input on the admin search box, so `%` and
+# `_` are escaped: without it, searching for "a_b" matches "aXb", and a search
+# for "%" matches every account.
+def _escape_like(text):
+    return (text.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_"))
+
+
+def admin_users(conn, query="", limit=50, offset=0):
+    """Accounts with their profile and how much they have logged.
+
+    LEFT JOIN, because an account that registered but never finished setup has
+    no profile row and still has to appear -- those are exactly the accounts
+    an admin is looking for.
+    """
+    where, args = "", []
+    if query.strip():
+        pattern = f"%{_escape_like(query.strip().lower())}%"
+        where = ("WHERE lower(u.email) LIKE ? ESCAPE '\\'"
+                 " OR lower(u.name) LIKE ? ESCAPE '\\'")
+        args = [pattern, pattern]
+
+    rows = conn.execute(
+        f"""
+        SELECT u.id, u.email, u.name, u.created_at, u.is_admin, u.disabled,
+               p.goal, p.target_kcal, p.age, p.gender, p.weight_kg,
+               p.updated_at AS profile_updated,
+               (SELECT COUNT(*) FROM entries e
+                 WHERE e.user_id = u.id AND e.deleted = 0) AS entry_count,
+               (SELECT MAX(e.eaten_at) FROM entries e
+                 WHERE e.user_id = u.id AND e.deleted = 0) AS last_entry
+          FROM users u
+          LEFT JOIN profile p ON p.user_id = u.id
+          {where}
+         ORDER BY u.created_at DESC
+         LIMIT ? OFFSET ?
+        """, (*args, limit, offset)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_user_count(conn, query=""):
+    if not query.strip():
+        row = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()
+        return row["n"] if row else 0
+    pattern = f"%{_escape_like(query.strip().lower())}%"
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM users"
+        " WHERE lower(email) LIKE ? ESCAPE '\\'"
+        "    OR lower(name) LIKE ? ESCAPE '\\'", (pattern, pattern)).fetchone()
+    return row["n"] if row else 0
+
+
+def admin_user(conn, user_id):
+    rows = conn.execute(
+        """
+        SELECT u.id, u.email, u.name, u.created_at, u.is_admin, u.disabled,
+               p.goal, p.target_kcal, p.computed_target_kcal, p.age, p.gender,
+               p.height_cm, p.weight_kg, p.target_weight_kg, p.activity_level,
+               p.allergens, p.diet_types, p.preferences, p.restrictions,
+               p.updated_at AS profile_updated
+          FROM users u
+          LEFT JOIN profile p ON p.user_id = u.id
+         WHERE u.id = ?
+        """, (user_id,)).fetchall()
+    return dict(rows[0]) if rows else None
+
+
+def admin_user_activity(conn, user_id, days=30):
+    """One row per day: how many entries and how many calories.
+
+    Grouped on the date prefix of the stored timestamp rather than a date
+    function, for the reason in _day_cutoff.
+    """
+    rows = conn.execute(
+        """
+        SELECT substr(eaten_at, 1, 10) AS day,
+               COUNT(*) AS entries,
+               SUM(kcal) AS kcal
+          FROM entries
+         WHERE user_id = ? AND deleted = 0 AND substr(eaten_at, 1, 10) >= ?
+         GROUP BY substr(eaten_at, 1, 10)
+         ORDER BY day DESC
+        """, (user_id, _day_cutoff(days))).fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_sessions(conn, limit=40):
+    """Signed-in devices, newest first -- the real sign-in log.
+
+    This is every session the server would accept right now. Expired rows are
+    left out: a session that no longer works is not an access path, and
+    listing it as one would misreport who can reach the account.
+    """
+    rows = conn.execute(
+        """
+        SELECT s.created_at, s.expires_at, u.email, u.name, u.id AS user_id,
+               u.is_admin, u.disabled
+          FROM sessions s
+          JOIN users u ON u.id = s.user_id
+         WHERE s.expires_at > ?
+         ORDER BY s.created_at DESC
+         LIMIT ?
+        """, (now_iso_utc(), limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_goal_distribution(conn):
+    """How many accounts chose each goal, from the profiles themselves."""
+    rows = conn.execute(
+        """
+        SELECT goal,
+               COUNT(*) AS users,
+               AVG(target_kcal) AS avg_target
+          FROM profile
+         WHERE goal IS NOT NULL AND goal <> ''
+         GROUP BY goal
+         ORDER BY COUNT(*) DESC
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_allergen_counts(conn):
+    """How many accounts avoid each allergen.
+
+    `profile.allergens` is a comma-joined token list, so the split happens
+    here rather than in SQL: neither engine has a portable string-split that
+    is worth the complexity for a table this size.
+    """
+    tally = {}
+    rows = conn.execute("SELECT allergens, diet_types FROM profile").fetchall()
+    for row in rows:
+        for token in (row["allergens"] or "").split(","):
+            token = token.strip()
+            if token:
+                tally[token] = tally.get(token, 0) + 1
+    return sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def admin_diet_counts(conn):
+    tally = {}
+    for row in conn.execute("SELECT diet_types FROM profile").fetchall():
+        for token in (row["diet_types"] or "").split(","):
+            token = token.strip()
+            if token:
+                tally[token] = tally.get(token, 0) + 1
+    return sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def admin_food_groups(conn):
+    rows = conn.execute(
+        """
+        -- Aliased `food_count`, not `items`: these rows are rendered in
+        -- Jinja, where `row.items` finds the dict's own .items method
+        -- instead of the column and formats it as a bound method.
+        SELECT food_group, COUNT(*) AS food_count,
+               AVG(energy_kcal) AS avg_kcal
+          FROM foods
+         WHERE food_group IS NOT NULL AND food_group <> ''
+         GROUP BY food_group
+         ORDER BY COUNT(*) DESC
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_foods(conn, query="", limit=50, offset=0):
+    where, args = "", []
+    if query.strip():
+        pattern = f"%{_escape_like(query.strip().lower())}%"
+        where = ("WHERE lower(name) LIKE ? ESCAPE '\\'"
+                 " OR lower(food_group) LIKE ? ESCAPE '\\'")
+        args = [pattern, pattern]
+    rows = conn.execute(
+        f"""SELECT food_id, name, food_group, serving_label, energy_kcal,
+                   protein_g, carbohydrate_g, total_fat_g, sodium_mg
+              FROM foods {where}
+             ORDER BY name LIMIT ? OFFSET ?""",
+        (*args, limit, offset)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_food_count(conn, query=""):
+    if not query.strip():
+        row = conn.execute("SELECT COUNT(*) AS n FROM foods").fetchone()
+        return row["n"] if row else 0
+    pattern = f"%{_escape_like(query.strip().lower())}%"
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM foods"
+        " WHERE lower(name) LIKE ? ESCAPE '\\'"
+        "    OR lower(food_group) LIKE ? ESCAPE '\\'",
+        (pattern, pattern)).fetchone()
+    return row["n"] if row else 0
+
+
+def admin_most_logged(conn, limit=15, days=30):
+    """The foods people actually log, which is not the same as what is listed."""
+    rows = conn.execute(
+        """
+        SELECT food_name, COUNT(*) AS times, AVG(kcal) AS avg_kcal
+          FROM entries
+         WHERE deleted = 0 AND substr(eaten_at, 1, 10) >= ?
+         GROUP BY food_name
+         ORDER BY COUNT(*) DESC, food_name
+         LIMIT ?
+        """, (_day_cutoff(days), limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_recipes(conn):
+    rows = conn.execute(
+        "SELECT id, name, kcal, protein_g, minutes, allergens, diet_types,"
+        " ingredients FROM recipes ORDER BY name").fetchall()
+    return [dict(r) for r in rows]
+
+
+def admin_daily_totals(conn, days=14):
+    """Entries and distinct users per day, for the reports page."""
+    rows = conn.execute(
+        """
+        SELECT substr(eaten_at, 1, 10) AS day,
+               COUNT(*) AS entries,
+               COUNT(DISTINCT user_id) AS users,
+               SUM(kcal) AS kcal
+          FROM entries
+         WHERE deleted = 0 AND substr(eaten_at, 1, 10) >= ?
+         GROUP BY substr(eaten_at, 1, 10)
+         ORDER BY day DESC
+        """, (_day_cutoff(days),)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- the two writes -------------------------------------------------------
+
+def admin_set_disabled(conn, user_id, disabled):
+    """Block or unblock sign-in, and sign out every device on the account.
+
+    Revoking the sessions is the half that matters. Without it, disabling an
+    account stops nothing until the existing tokens expire, which is up to
+    thirty days of continued access by something the panel is now showing as
+    blocked. The panel would be lying, and lying in the direction that counts.
+    """
+    conn.execute("UPDATE users SET disabled = ? WHERE id = ?",
+                 (1 if disabled else 0, user_id))
+    if disabled:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    conn.commit()
+
+
+def admin_set_admin(conn, user_id, is_admin):
+    conn.execute("UPDATE users SET is_admin = ? WHERE id = ?",
+                 (1 if is_admin else 0, user_id))
+    conn.commit()
+
+
+def admin_count_admins(conn):
+    """Enabled admins. Used to refuse the change that locks everyone out."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1 AND disabled = 0"
+    ).fetchone()
+    return row["n"] if row else 0

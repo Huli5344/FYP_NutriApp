@@ -29,6 +29,7 @@ from flask import (Flask, flash, g, jsonify, redirect, render_template,
                    request, session, url_for)
 
 import accounts
+import admin
 import database
 import db
 import logic
@@ -36,6 +37,10 @@ import recipes_api
 import sync
 
 app = Flask(__name__)
+
+# The staff panel, at /admin. Every route in it is behind an is_admin check
+# applied by the blueprint itself -- see admin.require_admin.
+app.register_blueprint(admin.bp)
 
 # A fixed key would let anyone forge a session cookie and sign in as any
 # user, so it comes from the environment in deployment. The fallback exists
@@ -165,8 +170,13 @@ def load_user_and_profile():
     # exist yet. An API caller is not redirected -- an HTML redirect in answer
     # to a JSON request is just a parse error at the other end. The app asks
     # /api/me whether setup is done and decides for itself.
+    # The admin panel is exempt as a whole. It measures nothing against a
+    # target, so it has nothing to redirect for -- and a staff account that
+    # has never used the app as a diary would otherwise be sent to set up a
+    # weight goal before it could look at the user list.
     if (not g.has_profile and not wants_json()
-            and request.endpoint not in SETUP_EXEMPT):
+            and request.endpoint not in SETUP_EXEMPT
+            and not (request.endpoint or "").startswith("admin.")):
         return redirect(url_for("profile_setup"))
     return None
 
@@ -1183,6 +1193,16 @@ def login():
             flash("Email or password is incorrect.", "error")
             return render_template("login.html",
                                    email=request.form.get("email", ""))
+
+        # See api_login: once the password is right, vagueness protects
+        # nobody and only confuses the person it is aimed at.
+        if accounts.is_blocked(user):
+            conn.commit()
+            conn.close()
+            flash("This account has been blocked by an administrator.",
+                  "error")
+            return render_template("login.html",
+                                   email=request.form.get("email", ""))
         conn.commit()
         conn.close()
 
@@ -1276,6 +1296,16 @@ def api_login():
         conn.commit()
         conn.close()
         return jsonify({"error": "email or password is incorrect"}), 401
+
+    # A blocked account is told it is blocked rather than that its password is
+    # wrong. The vague message above exists to avoid revealing which addresses
+    # are registered; that reason does not apply once the password has already
+    # been accepted, and "incorrect password" here would send someone into a
+    # reset loop that cannot possibly help them.
+    if accounts.is_blocked(user):
+        conn.commit()
+        conn.close()
+        return jsonify({"error": "this account has been blocked"}), 403
 
     accounts.purge_expired_sessions(conn)
     token = accounts.issue_token(conn, user["id"])
