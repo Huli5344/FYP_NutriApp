@@ -86,14 +86,16 @@ rows, taken when the page is drawn.
 | Categories and tags | `foods.food_group`, and the most-logged foods |
 | Preferences and allergens | `profile.allergens` and `profile.diet_types` |
 | Recipe service | `recipes` and `api_cache` |
-| Rules and metrics | The constants in `logic.py`, read at render time |
+| Rules and metrics | The effective rules: `logic.py` defaults plus any saved overrides. **Editable** |
 | Reports | `entries` grouped by day, last 14 and 30 days |
 | Roles and access | Accounts with `is_admin` |
 | Sessions | `sessions` that have not expired |
 
-The Rules page reads `logic.py` rather than a copy, so changing a multiplier in
-the code changes the page. A rules page kept in sync by hand is a rules page
-that is eventually wrong.
+The Rules page is editable: `logic.py` holds the defaults, and what an
+administrator saves is an override in the `settings` table merged onto them.
+Every value is bounded and checked server-side, nothing saves unless the whole
+form is valid, and "Restore defaults" removes the override. The minimum daily
+target cannot be set below 1,200 kcal. See ADMIN-NOTES.md.
 
 ---
 

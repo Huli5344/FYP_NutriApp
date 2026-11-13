@@ -153,17 +153,45 @@ the service, not commentary.
 
 ## Rules and metrics
 
-**Why this page has no edit controls.** These values live in the server's
-code, which is what actually computes every target. A form here could only
-write them somewhere else, leaving two sets of numbers and no way to tell
-which one a given target came from.
+**This page is editable.** It was read-only at first, on the reasoning that a
+form would leave two sets of numbers — the constants in `logic.py` and
+whatever the form wrote — with no way to tell which one a given target came
+from. That objection was about *where* the numbers live, and it is solved by
+having one source of truth rather than by refusing to have a form.
 
-The page reads the constants out of `logic.py` at render time rather than
-repeating them in the template, so changing a multiplier in the code changes
-the page. A rules page kept in sync by hand is a rules page that is eventually
-wrong.
+So: `logic.py`'s constants are the **defaults**. What the page saves is an
+override stored in the `settings` table and merged onto them. "Restore
+defaults" deletes the override. There is exactly one effective value for any
+rule at any moment, and the page says whether it is customised and who last
+changed it.
 
-Changing a rule is a code change and a deploy, deliberately.
+**The rules are read from the database at the point of use, not cached.** The
+server runs two gunicorn workers. A value cached in one process would go stale
+in the other as soon as a rule changed, and which calorie target a user got
+would then depend on which worker answered their request — a bug that would
+reproduce about half the time and look like nonsense. `current_rules()` in
+`app.py` reads once per request and caches only on `g`.
+
+**Every value is bounded, and the bounds are enforced server-side** in
+`logic.validate_rules()`, not by the form's `min`/`max` attributes. A request
+that never saw the form is held to the same limits. Validation is all-or-
+nothing: one bad field saves nothing, because several of these values only
+mean anything relative to each other and a partial save could leave a
+combination nobody chose.
+
+**Two floors cannot be edited away.**
+
+The first is the bound on the minimum daily target itself: it can be raised
+but not set below 1,200 kcal. That number is the lowest intake the app will
+ever recommend to anybody, 1,200 is the usual lower limit quoted for a diet
+nobody is medically supervising, and the people affected by it do not see this
+page. Making it freely editable would put a one-keystroke typo between an
+administrator and every user's calorie target.
+
+The second is in `daily_target_for()` and is not a setting at all: a target is
+never below that person's own resting burn, calculated from their profile.
+An edited minimum can raise someone's floor; nothing here can lower it past
+what their body uses at rest.
 
 ---
 

@@ -283,33 +283,93 @@ def categories_and_tags():
                            topbar_title="Categories and tags")
 
 
-@bp.route("/section/rules-and-metrics")
-def rules_and_metrics():
-    """The formulas the server actually uses, read out of logic.py.
+def rules_from_form(form):
+    """Assemble a rules mapping from the posted form.
 
-    Read from the module rather than typed into the template, so this page
-    cannot drift away from the code: change a multiplier in logic.py and this
-    page changes with it. A rules page that has to be kept in sync by hand is
-    a rules page that is eventually wrong.
+    Shapes the flat form fields back into the nested mapping; it does not
+    check anything. logic.validate_rules() does that, and is the only thing
+    that decides what is acceptable -- so the same limits apply however a
+    value arrives, including from a request that never saw the form.
+    """
+    return {
+        "activity": {level: form.get(f"activity.{level}")
+                     for level in logic.ACTIVITY_MULTIPLIERS},
+        "goal_adjustments": {goal: form.get(f"goal.{goal}")
+                             for goal in logic.GOAL_ADJUSTMENTS},
+        "meal_split": {meal: form.get(f"meal.{meal}")
+                       for meal in logic.MEAL_SPLIT},
+        # Same shape as logic.default_rules(), so the template can render
+        # either one. When validation fails the page is re-rendered from
+        # what was typed rather than from storage, and a shape that differed
+        # only on that path would break exactly when somebody made a typo.
+        "macro_splits": {
+            goal: [form.get(f"macro.{goal}.{i}") for i in range(3)]
+            for goal in logic.GOAL_MACRO_SPLITS
+        },
+        "default_macro_split": [form.get(f"macro.default.{i}")
+                                for i in range(3)],
+        "min_daily_target": form.get("min_daily_target"),
+        "max_daily_target": form.get("max_daily_target"),
+        "insights_window_days": form.get("insights_window_days"),
+    }
+
+
+@bp.route("/section/rules-and-metrics", methods=["GET", "POST"])
+def rules_and_metrics():
+    """The constants the server computes every calorie target with.
+
+    Editable, and stored in the database rather than in logic.py, so changing
+    one does not need a deploy. logic.py's own constants remain the defaults;
+    what is saved here is an override merged onto them, and "Restore
+    defaults" deletes it.
+
+    Every value is bounded by logic.LIMITS and checked server-side on save.
+    The bound on the minimum daily target is the one that is not a matter of
+    taste: it is the lowest intake the app will ever recommend to anybody,
+    and the people it affects do not see this page.
     """
     conn = database.connect()
     try:
+        errors = []
+        if request.method == "POST":
+            if request.form.get("action") == "reset":
+                database.reset_rules(conn)
+                flash("Restored the built-in defaults.", "success")
+                return redirect(url_for("admin.rules_and_metrics"))
+
+            candidate = rules_from_form(request.form)
+            cleaned, errors = logic.validate_rules(candidate)
+            if not errors:
+                database.save_rules(conn, cleaned, g.user["email"])
+                flash("Rules saved. They apply to every target calculated "
+                      "from now on.", "success")
+                return redirect(url_for("admin.rules_and_metrics"))
+            # Fall through and re-render with what was typed, so a long form
+            # is not thrown away over one bad field.
+            rules = candidate
+            for message in errors:
+                flash(message, "error")
+        else:
+            rules = database.load_rules(conn)
+
         stats = database.admin_overview(conn)
+        meta = database.rules_meta(conn)
     finally:
         conn.close()
 
+    defaults = logic.default_rules()
     return render_template(
         "admin/rules.html",
-        activity=sorted(logic.ACTIVITY_MULTIPLIERS.items(),
-                        key=lambda kv: kv[1]),
-        goals=sorted(logic.GOAL_ADJUSTMENTS.items(), key=lambda kv: kv[1]),
-        macro_splits=logic.GOAL_MACRO_SPLITS,
-        default_split=logic.MACRO_SPLIT,
-        meal_split=logic.MEAL_SPLIT,
-        kcal_floor=logic.MIN_DAILY_TARGET,
-        kcal_ceiling=logic.MAX_DAILY_TARGET,
+        rules=rules,
+        defaults=defaults,
+        limits=logic.LIMITS,
+        activity_levels=list(logic.ACTIVITY_MULTIPLIERS),
+        goal_names=list(logic.GOAL_ADJUSTMENTS),
+        macro_goals=list(logic.GOAL_MACRO_SPLITS),
+        meal_names=list(logic.MEAL_SPLIT),
         default_activity=logic.DEFAULT_ACTIVITY_MULTIPLIER,
-        insights_window=logic.INSIGHTS_WINDOW_DAYS,
+        customised=meta is not None,
+        meta=meta,
         stats=stats,
         topbar_title="Rules and metrics")
 

@@ -243,11 +243,29 @@ def entries_between(first, last):
     return rows
 
 
+def current_rules():
+    """The effective calorie rules for this request.
+
+    Read from the database rather than from logic.py's constants, because an
+    administrator can override them. Cached on `g` for the life of the
+    request and no longer: the server runs two worker processes, and a
+    longer-lived cache would let one of them keep serving the old numbers
+    after the other saved a change.
+    """
+    if not hasattr(g, "_rules"):
+        conn = database.connect()
+        try:
+            g._rules = database.load_rules(conn)
+        finally:
+            conn.close()
+    return g._rules
+
+
 def todays_summary():
     entries = entries_for(date.today())
     return entries, logic.summarise_day(
         entries, g.profile["target_kcal"],
-        logic.macro_split_for(g.profile["goal"]))
+        logic.macro_split_for(g.profile["goal"], current_rules()))
 
 
 
@@ -721,10 +739,11 @@ def _read_profile_form(form):
         except ValueError:
             errors.append("Daily target must be a whole number.")
         else:
-            if not logic.MIN_DAILY_TARGET <= manual_target <= logic.MAX_DAILY_TARGET:
+            rules = current_rules()
+            low, high = rules["min_daily_target"], rules["max_daily_target"]
+            if not low <= manual_target <= high:
                 errors.append(f"Daily target must be between "
-                              f"{logic.MIN_DAILY_TARGET} and "
-                              f"{logic.MAX_DAILY_TARGET} kcal.")
+                              f"{low} and {high} kcal.")
                 manual_target = None
 
     if errors:
@@ -747,6 +766,7 @@ def _read_profile_form(form):
                       if r in RESTRICTION_OPTIONS],
         manual_target_kcal=manual_target,
         updated_at=sync.now_iso(),
+        rules=current_rules(),
     )
     return profile, []
 
@@ -826,8 +846,8 @@ def profile():
     return render_template(
         "profile.html", weights=weights, bmr=bmr, multiplier=multiplier,
         maintenance=round(bmr * multiplier),
-        adjustment=logic.GOAL_ADJUSTMENTS.get(p["goal"], 0),
-        split=logic.macro_split_for(p["goal"]))
+        adjustment=current_rules()["goal_adjustments"].get(p["goal"], 0),
+        split=logic.macro_split_for(p["goal"], current_rules()))
 
 
 @app.route("/profile/weight", methods=["POST"])
@@ -866,7 +886,7 @@ def log_weight():
         target_weight_kg=p["target_weight_kg"],
         preferences=p["preferences"], restrictions=p["restrictions"],
         manual_target_kcal=p["target_kcal"] if p["target_is_manual"] else None,
-        updated_at=sync.now_iso())
+        updated_at=sync.now_iso(), rules=current_rules())
     database.save_profile(conn, scoped_user(), rebuilt)
     conn.commit()
     conn.close()

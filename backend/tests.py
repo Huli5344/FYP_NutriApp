@@ -2442,19 +2442,22 @@ class TestAdminPagesShowRealData(unittest.TestCase):
             conn.close()
         self.assertEqual(after_delete, with_entry - 1)
 
-    def test_the_rules_page_reads_the_real_constants(self):
-        """Read from logic.py at render time, so the page cannot drift.
+    def test_the_rules_page_shows_the_effective_values(self):
+        """The page is a form now, so the values are in the inputs.
 
-        If this ever fails because a constant changed, the page is right and
-        the test needs the new number -- which is the point.
+        Still read at render time rather than typed into the template: an
+        unedited database shows logic.py's own defaults, so a change to a
+        constant changes the page.
         """
         import logic
         body = self.page("/admin/section/rules-and-metrics")
-        self.assertIn("{:,}".format(logic.MIN_DAILY_TARGET), body)
-        self.assertIn("{:,}".format(logic.MAX_DAILY_TARGET), body)
+        self.assertIn(f'name="min_daily_target"', body)
+        self.assertIn(f'value="{logic.MIN_DAILY_TARGET}"', body)
+        self.assertIn(f'value="{logic.MAX_DAILY_TARGET}"', body)
         for level in logic.ACTIVITY_MULTIPLIERS:
             with self.subTest(level=level):
                 self.assertIn(level, body)
+                self.assertIn(f'name="activity.{level}"', body)
 
     def test_the_sessions_page_lists_a_real_sign_in(self):
         self.client.post("/api/register", json={
@@ -2590,3 +2593,285 @@ class TestDestructiveInitIsRefusedOnPostgres(unittest.TestCase):
         """
         self.assertFalse(db.is_postgres())
         self.assertNotIn("module.db", db.SQLITE_PATH)
+
+
+class TestEditableRules(unittest.TestCase):
+    """Administrator-edited calorie rules.
+
+    The point of the feature is that a saved change reaches the calculation.
+    A test that only checks the row was written would pass with the rules
+    stored and never read, which is the failure worth catching.
+    """
+
+    def setUp(self):
+        import app
+        import database
+        database.init(force=True)
+        app.app.config["TESTING"] = True
+        self.app = app.app
+        self.database = database
+        self.client = app.app.test_client()
+
+        body = self.client.post("/api/register", json={
+            "email": "boss@test.com", "password": "testpass123",
+            "name": "Boss"}).get_json()
+        conn = self.database.connect()
+        try:
+            self.database.admin_set_admin(conn, body["user"]["id"], True)
+        finally:
+            conn.close()
+
+    def as_admin(self):
+        client = self.app.test_client()
+        client.post("/login", data={"email": "boss@test.com",
+                                    "password": "testpass123"})
+        return client
+
+    def form(self, **overrides):
+        """A complete, valid rules form, with any field replaced."""
+        import logic
+        rules = logic.default_rules()
+        data = {"min_daily_target": rules["min_daily_target"],
+                "max_daily_target": rules["max_daily_target"],
+                "insights_window_days": rules["insights_window_days"]}
+        for level, value in rules["activity"].items():
+            data[f"activity.{level}"] = value
+        for goal, value in rules["goal_adjustments"].items():
+            data[f"goal.{goal}"] = value
+        for meal, value in rules["meal_split"].items():
+            data[f"meal.{meal}"] = value
+        for goal, split in rules["macro_splits"].items():
+            for i, share in enumerate(split):
+                data[f"macro.{goal}.{i}"] = share
+        for i, share in enumerate(rules["default_macro_split"]):
+            data[f"macro.default.{i}"] = share
+        data.update(overrides)
+        return data
+
+    def stored(self):
+        conn = self.database.connect()
+        try:
+            return self.database.load_rules(conn)
+        finally:
+            conn.close()
+
+    # --- storage ----------------------------------------------------------
+
+    def test_a_fresh_database_uses_the_built_in_defaults(self):
+        import logic
+        self.assertEqual(self.stored(), logic.default_rules())
+
+    def test_saving_a_rule_changes_what_is_loaded(self):
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(min_daily_target=1500))
+        self.assertEqual(self.stored()["min_daily_target"], 1500)
+
+    def test_restore_defaults_removes_the_override(self):
+        import logic
+        client = self.as_admin()
+        client.post("/admin/section/rules-and-metrics",
+                    data=self.form(min_daily_target=1500))
+        client.post("/admin/section/rules-and-metrics", data={"action": "reset"})
+        self.assertEqual(self.stored(), logic.default_rules())
+
+    def test_a_rule_added_later_keeps_its_default(self):
+        """Overrides are merged key by key, not swapped in wholesale.
+
+        A blob written before a rule existed must not make that rule come
+        back missing, or every reader of it breaks after an upgrade.
+        """
+        conn = self.database.connect()
+        try:
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) "
+                "VALUES ('rules', '{\"min_daily_target\": 1400}', '2026-01-01')")
+            conn.commit()
+        finally:
+            conn.close()
+        rules = self.stored()
+        self.assertEqual(rules["min_daily_target"], 1400)
+        self.assertIn("activity", rules)
+        self.assertIn("Sedentary", rules["activity"])
+
+    def test_an_unreadable_stored_value_falls_back_to_defaults(self):
+        """Better quietly correct figures than every target in the app failing."""
+        import logic
+        conn = self.database.connect()
+        try:
+            conn.execute("INSERT INTO settings (key, value, updated_at)"
+                         " VALUES ('rules', 'not json', '2026-01-01')")
+            conn.commit()
+        finally:
+            conn.close()
+        self.assertEqual(self.stored(), logic.default_rules())
+
+    # --- the part that matters: it reaches the calculation ----------------
+
+    def test_an_edited_goal_adjustment_changes_a_real_users_target(self):
+        import logic
+        who = dict(age=30, height_cm=175.0, weight_kg=80.0,
+                   activity_level="Moderately Active", goal="Lose Weight",
+                   gender="Male")
+        before = logic.daily_target_for(**who)
+
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"goal.Lose Weight": -250}))
+
+        after = logic.daily_target_for(rules=self.stored(), **who)
+        self.assertNotEqual(before, after)
+        self.assertAlmostEqual(after, before + 250, delta=10)
+
+    def test_an_edited_floor_raises_a_target_that_was_below_it(self):
+        import logic
+        # Someone small enough that the deficit would otherwise take them low.
+        who = dict(age=60, height_cm=150.0, weight_kg=45.0,
+                   activity_level="Sedentary", goal="Lose Weight",
+                   gender="Female")
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(min_daily_target=1800))
+        after = logic.daily_target_for(rules=self.stored(), **who)
+        self.assertGreaterEqual(after, 1800)
+
+    def test_the_profile_form_accepts_a_target_the_new_rules_allow(self):
+        """The manual-target check must follow the edited limits, not the
+        built-in ones, or the form rejects a value the rules now permit."""
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(max_daily_target=5500))
+        client = self.app.test_client()
+        client.post("/api/register", json={
+            "email": "eater@test.com", "password": "testpass123",
+            "name": "Eater"})
+        client.post("/login", data={"email": "eater@test.com",
+                                    "password": "testpass123"})
+        response = client.post("/profile/setup", data={
+            "name": "Eater", "age": 30, "gender": "Male", "height_cm": 180,
+            "weight_kg": 85, "activity_level": "Very Active",
+            "goal": "Build Muscle", "target_weight_kg": 88,
+            "target_kcal": 5200}, follow_redirects=True)
+        self.assertNotIn("must be between", response.get_data(as_text=True))
+
+    # --- validation -------------------------------------------------------
+
+    def test_the_floor_cannot_be_set_below_1200(self):
+        """The one bound that is not a preference.
+
+        It is the lowest intake the app will ever recommend, and the people
+        it affects do not see this page.
+        """
+        before = self.stored()["min_daily_target"]
+        response = self.as_admin().post(
+            "/admin/section/rules-and-metrics",
+            data=self.form(min_daily_target=400), follow_redirects=True)
+        self.assertEqual(self.stored()["min_daily_target"], before)
+        self.assertIn("between 1200", response.get_data(as_text=True))
+
+    def test_the_maximum_must_exceed_the_minimum(self):
+        before = self.stored()
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(min_daily_target=2400,
+                                            max_daily_target=2000))
+        self.assertEqual(self.stored(), before)
+
+    def test_meal_shares_that_do_not_add_up_are_refused(self):
+        before = self.stored()["meal_split"]
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"meal.breakfast": 0.9}))
+        self.assertEqual(self.stored()["meal_split"], before)
+
+    def test_macro_shares_that_do_not_add_up_are_refused(self):
+        before = self.stored()["macro_splits"]["Lose Weight"]
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"macro.Lose Weight.0": 0.9}))
+        self.assertEqual(self.stored()["macro_splits"]["Lose Weight"], before)
+
+    def test_a_value_that_is_not_a_number_is_refused(self):
+        before = self.stored()
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"activity.Sedentary": "fast"}))
+        self.assertEqual(self.stored(), before)
+
+    def test_nothing_is_saved_when_any_field_is_invalid(self):
+        """Validated as a whole: a form with one bad field writes nothing.
+
+        Several of these values only mean anything relative to each other, so
+        a partial save could leave a combination nobody chose.
+        """
+        before = self.stored()
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(min_daily_target=400,
+                                            **{"goal.Lose Weight": -300}))
+        self.assertEqual(self.stored(), before)
+
+    def test_limits_are_enforced_server_side_not_just_in_the_form(self):
+        """The form's min/max attributes are a convenience, nothing more."""
+        import logic
+        candidate = logic.default_rules()
+        candidate["min_daily_target"] = 100
+        candidate["activity"]["Sedentary"] = 99
+        _, errors = logic.validate_rules(candidate)
+        self.assertEqual(len(errors), 2)
+
+    # --- access -----------------------------------------------------------
+
+    def test_an_ordinary_account_cannot_change_the_rules(self):
+        before = self.stored()
+        self.client.post("/api/register", json={
+            "email": "plain@test.com", "password": "testpass123",
+            "name": "Plain"})
+        with self.app.test_client() as client:
+            client.post("/login", data={"email": "plain@test.com",
+                                        "password": "testpass123"})
+            response = client.post("/admin/section/rules-and-metrics",
+                                   data=self.form(min_daily_target=2000))
+            self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.stored(), before)
+
+    def test_an_anonymous_post_cannot_change_the_rules(self):
+        before = self.stored()
+        self.client.post("/admin/section/rules-and-metrics",
+                         data=self.form(min_daily_target=2000))
+        self.assertEqual(self.stored(), before)
+
+    def test_an_edited_rule_reaches_a_target_stored_through_the_app(self):
+        """End to end, through HTTP, not through logic.py directly.
+
+        The other tests in this class prove storage works and that logic.py
+        honours a rules mapping it is handed. Neither proves app.py actually
+        hands it one -- which is the link that breaks if somebody adds a new
+        call to build_profile and forgets the argument. This drives the real
+        setup form and reads the target back out of the database.
+        """
+        self.as_admin().post("/admin/section/rules-and-metrics",
+                             data=self.form(**{"goal.Lose Weight": -100}))
+
+        client = self.app.test_client()
+        body = client.post("/api/register", json={
+            "email": "eater@test.com", "password": "testpass123",
+            "name": "Eater"}).get_json()
+        client.post("/login", data={"email": "eater@test.com",
+                                    "password": "testpass123"})
+        client.post("/profile/setup", data={
+            "name": "Eater", "age": 30, "gender": "Male", "height_cm": 175,
+            "weight_kg": 80, "activity_level": "Moderately Active",
+            "goal": "Lose Weight", "target_weight_kg": 75},
+            follow_redirects=True)
+
+        conn = self.database.connect()
+        try:
+            stored = conn.execute(
+                "SELECT computed_target_kcal FROM profile WHERE user_id = ?",
+                (body["user"]["id"],)).fetchone()
+        finally:
+            conn.close()
+        self.assertIsNotNone(stored, "the profile was not saved")
+
+        import logic
+        who = dict(age=30, height_cm=175.0, weight_kg=80.0,
+                   activity_level="Moderately Active", goal="Lose Weight",
+                   gender="Male")
+        with_edit = logic.daily_target_for(rules=self.stored(), **who)
+        with_default = logic.daily_target_for(**who)
+
+        self.assertNotEqual(with_edit, with_default,
+                            "the fixture does not distinguish the two")
+        self.assertEqual(stored["computed_target_kcal"], with_edit)

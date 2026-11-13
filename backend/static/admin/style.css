@@ -140,3 +140,17 @@ th.num { text-align: right; }
 }
 .button:disabled:hover,
 .button[disabled]:hover { filter: none; }
+
+/* Editable rule fields. Sized to their content so a column of them lines up
+   and a three-field macro row does not wrap. */
+.rule-input {
+    border: 1px solid var(--line);
+    font-family: inherit;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    padding: 6px 8px;
+    text-align: right;
+    width: 90px;
+}
+.rule-input:focus { border-color: #7d9c88; outline: 2px solid #e3ece6; }
+.kv .rule-input { width: 100px; }

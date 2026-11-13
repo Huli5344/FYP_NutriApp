@@ -160,13 +160,13 @@ def auto_tags(nutrition):
     return [name for name, rule in TAG_RULES if rule(nutrition)]
 
 # Daily summary and dashboard
-def split_target(target_kcal, split=None):
+def split_target(target_kcal, split=None, rules=None):
     """Divide the daily target across meals, absorbing rounding drift.
 
     Rounding each share independently can leave the parts a few calories off the
     total, which reads as a bug on screen.
     """
-    split = split or MEAL_SPLIT
+    split = split or (rules or {}).get("meal_split") or MEAL_SPLIT
     parts = {meal: round(target_kcal * share) for meal, share in split.items()}
     drift = target_kcal - sum(parts.values())
     if drift:
@@ -199,30 +199,38 @@ def basal_metabolic_rate(age, height_cm, weight_kg, gender=None):
 
 
 def daily_target_for(age, height_cm, weight_kg, activity_level, goal,
-                     gender=None):
+                     gender=None, rules=None):
     """The daily calorie target a profile's measurements and goal imply.
 
     Resting burn, scaled for activity, then adjusted for the goal. The result
     is never below resting burn: a deficit that takes someone under what their
     body uses at rest is the one outcome this must not produce, however the
     numbers come out.
-    """
-    bmr = basal_metabolic_rate(age, height_cm, weight_kg, gender)
-    multiplier = ACTIVITY_MULTIPLIERS.get(activity_level,
-                                          DEFAULT_ACTIVITY_MULTIPLIER)
-    adjusted = (bmr * multiplier) + GOAL_ADJUSTMENTS.get(goal, 0)
 
-    floor = max(bmr, MIN_DAILY_TARGET)
-    clamped = min(max(adjusted, floor), MAX_DAILY_TARGET)
+    `rules` is the administrator-editable mapping; omitted, the built-in
+    defaults apply. Note that the resting-burn floor below is not part of it
+    and cannot be edited away -- an edited minimum can raise the floor for a
+    given person but never lower it past what their body uses at rest.
+    """
+    rules = rules or default_rules()
+    bmr = basal_metabolic_rate(age, height_cm, weight_kg, gender)
+    multiplier = rules["activity"].get(activity_level,
+                                       DEFAULT_ACTIVITY_MULTIPLIER)
+    adjusted = (bmr * multiplier) + rules["goal_adjustments"].get(goal, 0)
+
+    floor = max(bmr, rules["min_daily_target"])
+    clamped = min(max(adjusted, floor), rules["max_daily_target"])
 
     # Rounded to ten, because a target presented as 1,847 implies a precision
     # the estimate does not have.
     return round(clamped / 10) * 10
 
 
-def macro_split_for(goal):
+def macro_split_for(goal, rules=None):
     """Macro shares for a goal, falling back to the default split."""
-    return GOAL_MACRO_SPLITS.get(goal, MACRO_SPLIT)
+    rules = rules or default_rules()
+    return tuple(rules["macro_splits"].get(goal,
+                                           rules["default_macro_split"]))
 
 
 # Translating what setup collects into what the recipe data uses
@@ -256,14 +264,14 @@ def primary_diet_type(preferences):
 def build_profile(name, age, height_cm, weight_kg, activity_level, goal,
                   email="", gender=None, target_weight_kg=None,
                   preferences=(), restrictions=(), manual_target_kcal=None,
-                  updated_at=None):
+                  updated_at=None, rules=None):
     """Assemble a stored profile from what the setup form collected.
 
     The one place raw answers become the normalised values the rest of the app
     reads, so nothing downstream can filter on an untranslated label.
     """
     computed = daily_target_for(age, height_cm, weight_kg, activity_level,
-                                goal, gender)
+                                goal, gender, rules=rules)
     return {
         "name": name,
         "email": email,
@@ -516,3 +524,160 @@ def progress_towards_target(log, target_kg):
     if abs(needed) < 0.1:
         return None
     return max(0, min(100, round((current - start) / needed * 100)))
+
+
+# ---------------------------------------------------------------------------
+# Editable rules.
+#
+# The constants above are the defaults. An administrator can override them
+# from the admin panel, and the overrides live in the database rather than in
+# this file, so changing one does not need a deploy.
+#
+# They are read from the database at the point of use rather than cached in
+# module state. The server runs two gunicorn workers: a value cached in one
+# process would go stale in the other the moment a rule changed, and a user's
+# calorie target would then depend on which worker happened to answer. That
+# is not a bug anybody would find quickly.
+#
+# This module still does no database work. Callers pass a `rules` mapping;
+# passing nothing means the defaults, which is what keeps the pure-logic
+# tests free of a database.
+# ---------------------------------------------------------------------------
+
+def default_rules():
+    """The built-in values, as the mapping the overrides are merged onto."""
+    return {
+        "activity": dict(ACTIVITY_MULTIPLIERS),
+        "goal_adjustments": dict(GOAL_ADJUSTMENTS),
+        "macro_splits": {goal: list(split)
+                         for goal, split in GOAL_MACRO_SPLITS.items()},
+        "default_macro_split": list(MACRO_SPLIT),
+        "meal_split": dict(MEAL_SPLIT),
+        "min_daily_target": MIN_DAILY_TARGET,
+        "max_daily_target": MAX_DAILY_TARGET,
+        "insights_window_days": INSIGHTS_WINDOW_DAYS,
+    }
+
+
+# Bounds every edited value is held to, whatever is typed into the form.
+#
+# These are not form hints -- validate_rules() enforces them server-side, and
+# a value outside them is rejected rather than clamped, so nobody is left
+# believing they saved something they did not.
+#
+# The floor on `min_daily_target` is the one that is not really a preference.
+# It is the lowest daily intake this app will ever recommend, and 1,200 kcal
+# is the usual lower limit quoted for a diet nobody is medically supervising
+# on. An administrator can raise it; the form will not let anyone take it
+# lower, because the people affected by that number never see this page.
+LIMITS = {
+    "activity": (1.0, 3.0),
+    "goal_adjustments": (-1000, 1000),
+    "min_daily_target": (1200, 2500),
+    "max_daily_target": (2000, 6000),
+    "insights_window_days": (3, 90),
+}
+
+# Shares are allowed to miss 1.0 by this much before being rejected, so a
+# split entered as 0.33/0.33/0.34 is accepted and 0.5/0.3/0.3 is not.
+SHARE_TOLERANCE = 0.005
+
+
+def validate_rules(candidate):
+    """Check an edited rules mapping. Returns (cleaned, errors).
+
+    `errors` is a list of sentences for the person who typed them. A non-empty
+    list means nothing should be saved: the mapping is validated as a whole,
+    because several of these values only make sense relative to each other.
+    """
+    errors = []
+    cleaned = default_rules()
+
+    def number(value, label, low, high, cast=float):
+        try:
+            result = cast(value)
+        except (TypeError, ValueError):
+            errors.append(f"{label}: '{value}' is not a number.")
+            return None
+        if not low <= result <= high:
+            errors.append(f"{label}: must be between {low} and {high}.")
+            return None
+        return result
+
+    low, high = LIMITS["activity"]
+    for level in ACTIVITY_MULTIPLIERS:
+        value = number(candidate.get("activity", {}).get(level),
+                       f"Activity multiplier for {level}", low, high)
+        if value is not None:
+            cleaned["activity"][level] = value
+
+    low, high = LIMITS["goal_adjustments"]
+    for goal in GOAL_ADJUSTMENTS:
+        value = number(candidate.get("goal_adjustments", {}).get(goal),
+                       f"Goal adjustment for {goal}", low, high, int)
+        if value is not None:
+            cleaned["goal_adjustments"][goal] = value
+
+    low, high = LIMITS["min_daily_target"]
+    minimum = number(candidate.get("min_daily_target"),
+                     "Minimum daily target", low, high, int)
+    low, high = LIMITS["max_daily_target"]
+    maximum = number(candidate.get("max_daily_target"),
+                     "Maximum daily target", low, high, int)
+    if minimum is not None:
+        cleaned["min_daily_target"] = minimum
+    if maximum is not None:
+        cleaned["max_daily_target"] = maximum
+    if (minimum is not None and maximum is not None
+            and maximum <= minimum):
+        errors.append("Maximum daily target must be higher than the minimum.")
+
+    low, high = LIMITS["insights_window_days"]
+    window = number(candidate.get("insights_window_days"),
+                    "Insights window", low, high, int)
+    if window is not None:
+        cleaned["insights_window_days"] = window
+
+    # Meal split: every meal, and the shares have to add up.
+    meal = {}
+    for name in MEAL_SPLIT:
+        value = number(candidate.get("meal_split", {}).get(name),
+                       f"Meal share for {name}", 0.0, 1.0)
+        if value is not None:
+            meal[name] = value
+    if len(meal) == len(MEAL_SPLIT):
+        total = sum(meal.values())
+        if abs(total - 1.0) > SHARE_TOLERANCE:
+            errors.append(
+                f"Meal shares add up to {total:.0%}, not 100%.")
+        else:
+            cleaned["meal_split"] = meal
+
+    # Macro splits: one row per goal, plus the fallback. Each must total 1.0,
+    # or the grams it produces do not match the calories they came from.
+    given = dict(candidate.get("macro_splits", {}))
+    if candidate.get("default_macro_split") is not None:
+        given["default"] = candidate["default_macro_split"]
+    for goal in list(GOAL_MACRO_SPLITS) + ["default"]:
+        raw = given.get(goal)
+        if raw is None:
+            continue
+        parts = []
+        for share, macro in zip(raw, ("carbohydrate", "protein", "fat")):
+            value = number(share, f"{goal} {macro} share", 0.0, 1.0)
+            if value is None:
+                break
+            parts.append(value)
+        if len(parts) != 3:
+            continue
+        total = sum(parts)
+        if abs(total - 1.0) > SHARE_TOLERANCE:
+            errors.append(f"{goal}: macro shares add up to {total:.0%}, "
+                          f"not 100%.")
+            continue
+        if goal == "default":
+            cleaned["default_macro_split"] = parts
+        else:
+            cleaned["macro_splits"][goal] = parts
+
+    return cleaned, errors

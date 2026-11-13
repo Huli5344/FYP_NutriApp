@@ -3,31 +3,55 @@
 
 {% block title %}Rules and metrics | Nutri App admin{% endblock %}
 
+{#- A value that differs from the built-in default is marked, so an edited
+    page shows at a glance what has been changed and to what. -#}
+{% macro was(current, default, suffix="") %}
+    {% if current|string != default|string %}
+        <span class="muted">was {{ default }}{{ suffix }}</span>
+    {% endif %}
+{% endmacro %}
+
 {% block content %}
 {{ m.heading("NUTRI APP / ADMINISTRATION / RULES", "Rules and metrics",
-   "The constants the server computes with, read out of the code at render
-    time.") }}
+   "The constants every calorie target is computed from. Changes apply to
+    targets calculated after they are saved.") }}
+
+{% if customised %}
+<p class="muted" style="margin-bottom: 14px;">
+    Customised &mdash; last saved {{ m.moment(meta.updated_at) }}
+    {% if meta.updated_by %}by {{ meta.updated_by }}{% endif %}.
+</p>
+{% else %}
+<p class="muted" style="margin-bottom: 14px;">
+    Currently using the built-in defaults.
+</p>
+{% endif %}
+
+<form method="POST" action="{{ url_for('admin.rules_and_metrics') }}">
 
 <div class="split-grid">
     <section class="panel table-panel">
         <div class="panel-heading">
             <div>
                 <h2>Activity multipliers</h2>
-                <p>Applied to the Mifflin&ndash;St Jeor estimate.</p>
+                <p>Applied to the Mifflin&ndash;St Jeor estimate.
+                   {{ limits.activity[0] }} to {{ limits.activity[1] }}.</p>
             </div>
         </div>
         <div class="table-wrap">
             <table>
                 <thead><tr><th>Level</th><th class="num">Multiplier</th></tr></thead>
                 <tbody>
-                    {% for level, value in activity %}
+                    {% for level in activity_levels %}
                     <tr>
                         <td class="user-name">{{ level }}</td>
                         <td class="num">
-                            &times;{{ value }}
-                            {% if value == default_activity %}
-                                <span class="muted">default</span>
-                            {% endif %}
+                            <input class="rule-input" type="number" step="0.001"
+                                   min="{{ limits.activity[0] }}"
+                                   max="{{ limits.activity[1] }}"
+                                   name="activity.{{ level }}"
+                                   value="{{ rules.activity[level] }}" required>
+                            {{ was(rules.activity[level], defaults.activity[level]) }}
                         </td>
                     </tr>
                     {% endfor %}
@@ -40,17 +64,27 @@
         <div class="panel-heading">
             <div>
                 <h2>Goal adjustments</h2>
-                <p>Added after the activity multiplier.</p>
+                <p>Calories added after the activity multiplier.
+                   {{ limits.goal_adjustments[0] }} to
+                   {{ limits.goal_adjustments[1] }}.</p>
             </div>
         </div>
         <div class="table-wrap">
             <table>
                 <thead><tr><th>Goal</th><th class="num">Adjustment</th></tr></thead>
                 <tbody>
-                    {% for goal, value in goals %}
+                    {% for goal in goal_names %}
                     <tr>
                         <td class="user-name">{{ goal }}</td>
-                        <td class="num">{{ "{:+,}".format(value) if value else "none" }}{% if value %} kcal{% endif %}</td>
+                        <td class="num">
+                            <input class="rule-input" type="number" step="10"
+                                   min="{{ limits.goal_adjustments[0] }}"
+                                   max="{{ limits.goal_adjustments[1] }}"
+                                   name="goal.{{ goal }}"
+                                   value="{{ rules.goal_adjustments[goal] }}" required>
+                            {{ was(rules.goal_adjustments[goal],
+                                   defaults.goal_adjustments[goal]) }}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -63,27 +97,39 @@
     <div class="panel-heading">
         <div>
             <h2>Macro splits</h2>
-            <p>Carbohydrate / protein / fat, as a share of the daily target.</p>
+            <p>Shares of the daily target. Each row must add up to 100%, or
+               the grams will not match the calories they came from.</p>
         </div>
     </div>
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Goal</th><th class="num">Carbs</th><th class="num">Protein</th><th class="num">Fat</th></tr>
+                <tr>
+                    <th>Goal</th><th class="num">Carbs</th>
+                    <th class="num">Protein</th><th class="num">Fat</th>
+                </tr>
             </thead>
             <tbody>
-                {% for goal, split in macro_splits.items() %}
+                {% for goal in macro_goals %}
                 <tr>
                     <td class="user-name">{{ goal }}</td>
-                    {% for share in split %}
-                    <td class="num">{{ (share * 100) | round | int }}%</td>
+                    {% for i in range(3) %}
+                    <td class="num">
+                        <input class="rule-input" type="number" step="0.01"
+                               min="0" max="1" name="macro.{{ goal }}.{{ i }}"
+                               value="{{ rules.macro_splits[goal][i] }}" required>
+                    </td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
                 <tr>
                     <td class="muted">Any other goal</td>
-                    {% for share in default_split %}
-                    <td class="num muted">{{ (share * 100) | round | int }}%</td>
+                    {% for i in range(3) %}
+                    <td class="num">
+                        <input class="rule-input" type="number" step="0.01"
+                               min="0" max="1" name="macro.default.{{ i }}"
+                               value="{{ rules.default_macro_split[i] }}" required>
+                    </td>
                     {% endfor %}
                 </tr>
             </tbody>
@@ -96,17 +142,22 @@
         <div class="panel-heading">
             <div>
                 <h2>Meal split</h2>
-                <p>How a daily target is divided across the day.</p>
+                <p>How a daily target is divided across the day. Must add up
+                   to 100%.</p>
             </div>
         </div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>Meal</th><th class="num">Share of target</th></tr></thead>
+                <thead><tr><th>Meal</th><th class="num">Share</th></tr></thead>
                 <tbody>
-                    {% for meal, share in meal_split.items() %}
+                    {% for meal in meal_names %}
                     <tr>
                         <td class="user-name">{{ meal }}</td>
-                        <td class="num">{{ (share * 100) | round | int }}%</td>
+                        <td class="num">
+                            <input class="rule-input" type="number" step="0.01"
+                                   min="0" max="1" name="meal.{{ meal }}"
+                                   value="{{ rules.meal_split[meal] }}" required>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -119,23 +170,59 @@
         <table class="kv">
             <tr>
                 <th>Minimum daily target</th>
-                <td>{{ "{:,}".format(kcal_floor) }} kcal</td>
+                <td>
+                    <input class="rule-input" type="number" step="10"
+                           min="{{ limits.min_daily_target[0] }}"
+                           max="{{ limits.min_daily_target[1] }}"
+                           name="min_daily_target"
+                           value="{{ rules.min_daily_target }}" required> kcal
+                    {{ was(rules.min_daily_target, defaults.min_daily_target) }}
+                </td>
             </tr>
             <tr>
                 <th>Maximum daily target</th>
-                <td>{{ "{:,}".format(kcal_ceiling) }} kcal</td>
+                <td>
+                    <input class="rule-input" type="number" step="10"
+                           min="{{ limits.max_daily_target[0] }}"
+                           max="{{ limits.max_daily_target[1] }}"
+                           name="max_daily_target"
+                           value="{{ rules.max_daily_target }}" required> kcal
+                    {{ was(rules.max_daily_target, defaults.max_daily_target) }}
+                </td>
             </tr>
             <tr>
                 <th>Insights window</th>
-                <td>{{ insights_window }} days</td>
+                <td>
+                    <input class="rule-input" type="number" step="1"
+                           min="{{ limits.insights_window_days[0] }}"
+                           max="{{ limits.insights_window_days[1] }}"
+                           name="insights_window_days"
+                           value="{{ rules.insights_window_days }}" required> days
+                </td>
             </tr>
         </table>
-        <p class="muted" style="margin-top: 14px; font-size: 14px;">
+
+        <p class="muted" style="margin-top: 14px; font-size: 13px;">
             A computed target is clamped into this range before it is stored,
-            whatever the goal and activity level would otherwise produce. The
-            floor is the part that matters: it is what stops an aggressive
-            weight-loss goal from recommending an unsafe intake.
+            whatever the goal and activity level would otherwise produce.
+        </p>
+        <p class="muted" style="margin-top: 10px; font-size: 13px;">
+            The minimum cannot be set below
+            {{ "{:,}".format(limits.min_daily_target[0]) }} kcal. A target is
+            also never allowed below a person's own resting burn, which is
+            calculated per profile and is not a setting.
         </p>
     </section>
 </div>
+
+<div class="row-actions" style="justify-content: flex-start; margin: 18px 0 40px;">
+    <button class="button button-dark" type="submit">Save rules</button>
+    {% if customised %}
+    <button class="button button-quiet" type="submit" name="action" value="reset"
+            formnovalidate>Restore defaults</button>
+    {% endif %}
+    <a class="button button-quiet" href="{{ url_for('admin.rules_and_metrics') }}">Cancel</a>
+</div>
+
+</form>
 {% endblock %}

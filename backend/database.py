@@ -61,6 +61,23 @@ SCHEMA = """
 -- credentials protecting more, written later and tested less.
 --
 -- Both are checked at sign-in and on every admin request. See ADMIN.md.
+-- Administrator-editable settings, one row per setting name.
+--
+-- Currently holds exactly one row, "rules", whose value is the JSON of the
+-- calorie rules the admin panel edits. A key/value table rather than a column
+-- per rule: the rules are a nested shape (a multiplier per activity level, a
+-- split per goal) that does not flatten into columns usefully, and adding a
+-- rule should not need a migration.
+--
+-- A missing row means "no overrides", which is the correct state for a fresh
+-- database -- logic.py's own constants are the defaults.
+CREATE TABLE IF NOT EXISTS settings (
+    key        {text} PRIMARY KEY,
+    value      {text} NOT NULL,
+    updated_at {text} NOT NULL,
+    updated_by {text}
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id            {text} PRIMARY KEY,
     email         {text} NOT NULL UNIQUE,
@@ -482,7 +499,7 @@ def init(force=False):
     if force and db.is_postgres():
         for table in ("sessions", "shown", "weights", "entries", "profile",
                       "custom_foods", "api_cache", "recipes", "foods", "meta",
-                      "users"):
+                      "settings", "users"):
             conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
         conn.commit()
 
@@ -1011,3 +1028,81 @@ def admin_count_admins(conn):
         "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1 AND disabled = 0"
     ).fetchone()
     return row["n"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Administrator-editable rules.
+#
+# Read at the point of use rather than cached. The server runs two gunicorn
+# workers, so a value cached in one process would go stale in the other as
+# soon as a rule changed, and which calorie target a user got would depend on
+# which worker answered. See logic.default_rules().
+# ---------------------------------------------------------------------------
+
+def load_rules(conn):
+    """The effective rules: logic.py's defaults with any overrides merged on.
+
+    Merged key by key rather than replacing wholesale, so a stored blob
+    written before a new rule existed still works -- the new rule simply
+    keeps its default instead of coming back missing.
+
+    A stored value that will not parse is ignored and the defaults are used.
+    The alternative is every calorie target in the app failing because one
+    row is malformed, which is a worse outcome than quietly correct figures.
+    """
+    import json
+    import logic
+
+    rules = logic.default_rules()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'rules'"
+                           ).fetchone()
+    except Exception:
+        return rules            # table missing: a database predating this
+    if not row:
+        return rules
+
+    try:
+        stored = json.loads(row["value"])
+    except (ValueError, TypeError):
+        return rules
+    if not isinstance(stored, dict):
+        return rules
+
+    for key, value in stored.items():
+        if key not in rules:
+            continue            # a rule that no longer exists
+        if isinstance(rules[key], dict) and isinstance(value, dict):
+            rules[key].update(value)
+        else:
+            rules[key] = value
+    return rules
+
+
+def save_rules(conn, rules, updated_by=None):
+    """Replace the stored overrides. Validate before calling this."""
+    import json
+
+    conn.execute("DELETE FROM settings WHERE key = 'rules'")
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_at, updated_by)"
+        " VALUES ('rules', ?, ?, ?)",
+        (json.dumps(rules, sort_keys=True), now_iso_utc(), updated_by))
+    conn.commit()
+
+
+def rules_meta(conn):
+    """When the rules were last changed and by whom, or None if never."""
+    try:
+        row = conn.execute(
+            "SELECT updated_at, updated_by FROM settings WHERE key = 'rules'"
+        ).fetchone()
+    except Exception:
+        return None
+    return dict(row) if row else None
+
+
+def reset_rules(conn):
+    """Drop the overrides, so logic.py's defaults apply again."""
+    conn.execute("DELETE FROM settings WHERE key = 'rules'")
+    conn.commit()
