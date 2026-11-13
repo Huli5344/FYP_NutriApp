@@ -33,7 +33,7 @@ class LocalDb {
   /// Bumped whenever the schema changes. A device that already holds an older
   /// database runs [_upgrade] rather than [_create], so an installed copy of
   /// the app is migrated instead of failing on a missing table.
-  static const int schemaVersion = 4;
+  static const int schemaVersion = 5;
 
   Future<Database> _open() async {
     final path = p.join(await getDatabasesPath(), 'nutriapp.db');
@@ -51,6 +51,7 @@ class LocalDb {
         if (from < 2) await _createV2(db);
         if (from < 3) await _upgradeToV3(db);
         if (from < 4) await _createV4(db);
+        if (from < 5) await _upgradeToV5(db);
       },
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
@@ -140,6 +141,27 @@ class LocalDb {
     ''');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS custom_foods_name ON custom_foods(name)');
+  }
+
+  /// Collapse weights already logged more than once on the same day.
+  ///
+  /// Keeps the most recently updated reading for each day and tombstones the
+  /// rest, rather than deleting them outright, so the removals reach the
+  /// server on the next sync instead of being handed straight back.
+  ///
+  /// Rows already tombstoned are left alone: re-stamping them would mark
+  /// them dirty and push a deletion the server has long since applied.
+  Future<void> _upgradeToV5(Database db) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    await db.rawUpdate('''
+      UPDATE weights SET deleted = 1, dirty = 1, updated_at = ?
+      WHERE deleted = 0 AND id NOT IN (
+        SELECT id FROM (
+          SELECT id, MAX(updated_at) FROM weights WHERE deleted = 0
+          GROUP BY substr(recorded_at, 1, 10)
+        )
+      )
+    ''', [now]);
   }
 
   Future<void> _upgradeToV3(Database db) async {
@@ -397,17 +419,38 @@ class LocalDb {
     return rows.map(WeightEntry.fromRow).toList();
   }
 
+  /// Record today's weight, replacing today's reading if there is one.
+  ///
+  /// One per calendar day, not one per tap. Logging twice used to leave two
+  /// rows, which read as clutter in the profile list but did real damage on
+  /// the Insights chart: the sparkline plots one point per measurement, not
+  /// per day, so three weigh-ins on Thursday stretched Thursday across three
+  /// times the width and bent the trend line. "Change" compared the first
+  /// and last *measurements* rather than the first and last days.
+  ///
+  /// The existing row's id is reused rather than a new one minted, so the
+  /// server updates that row instead of gaining a duplicate of its own.
   Future<WeightEntry> logWeight(double kg,
       {DateTime? recordedAt, String note = ''}) async {
+    final db = await database;
+    final when = recordedAt ?? DateTime.now();
+
+    final today = await db.query(
+      'weights',
+      where: 'deleted = 0 AND substr(recorded_at, 1, 10) = ?',
+      whereArgs: [dayKey(when)],
+      orderBy: 'updated_at DESC',
+      limit: 1,
+    );
+
     final entry = WeightEntry(
-      id: _uuid.v4(),
+      id: today.isEmpty ? _uuid.v4() : '${today.first['id']}',
       kg: kg,
-      recordedAt: recordedAt ?? DateTime.now(),
+      recordedAt: when,
       note: note,
       updatedAt: DateTime.now().toUtc(),
       dirty: true,
     );
-    final db = await database;
     await db.insert('weights', entry.toRow(),
         conflictAlgorithm: ConflictAlgorithm.replace);
     return entry;
