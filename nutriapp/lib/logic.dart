@@ -9,6 +9,8 @@
 /// obvious that nothing here can block on I/O.
 library;
 
+import 'dart:math';
+
 import 'models.dart';
 
 // ---------------------------------------------------------------------------
@@ -476,6 +478,31 @@ double scoreRecipe(Recipe recipe, int slotTargetKcal, Set<String> recentIds) {
 ///
 /// Order matters: unsafe recipes are dropped first, so someone with a peanut
 /// allergy cannot be shown a peanut dish however well it fits their calories.
+/// Draw candidates from a wider pool, at random.
+///
+/// Discover ranks what it is given, and ranking is deterministic: given the
+/// same pool it produces the same list. Variety therefore has to come from
+/// the pool, and this is what varies it.
+///
+/// It replaced suppression as the mechanism, because suppression cycles by
+/// construction. Hiding what was shown last time makes it eligible the time
+/// after, so the tab alternated between two fixed lists -- sixteen meals out
+/// of 2,647, however long somebody used it. Widening the suppression window
+/// only lengthens the cycle; it does not remove it.
+///
+/// `recommend` still runs on the result, so the best-fitting of whatever was
+/// drawn goes to the top. That is why drawing at random costs almost nothing
+/// in relevance.
+///
+/// `random` is injectable so tests can pin the draw. Production passes
+/// nothing and gets a fresh source.
+List<Recipe> drawCandidates(List<Recipe> pool, int count, {Random? random}) {
+  if (count <= 0) return const [];
+  if (pool.length <= count) return List<Recipe>.of(pool);
+  final shuffled = List<Recipe>.of(pool)..shuffle(random);
+  return shuffled.take(count).toList();
+}
+
 List<Recipe> recommend(
   List<Recipe> recipes,
   List<String> allergens,

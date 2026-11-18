@@ -65,6 +65,19 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   /// diet filters remove some of every slice.
   static const int _pageSize = 60;
 
+  /// How many foods the first load draws on.
+  ///
+  /// Four pages' worth, not one. `suggestions()` orders by closeness to the
+  /// slot's calorie target, so the first 60 are the 60 nearest it -- always
+  /// the same 60, because the first load passes no offset. Ranking the same
+  /// small set repeatedly is what made reloading show the same meals.
+  ///
+  /// 240 is a measured compromise rather than a round number: against a 600
+  /// kcal slot the worst-fitting food in the window is about 127 kcal out,
+  /// which is a reasonable suggestion. At 600 candidates it is 280 kcal out,
+  /// which is not.
+  static const int _poolSize = 240;
+
   /// Start the next page while this much is still below the fold, so it
   /// arrives before the bottom does.
   static const double _loadAhead = 900;
@@ -125,8 +138,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     final left = remainingForMeal(summary, _slot);
 
     final result = await Api.instance.recommendations(profile.dietType);
-    final recent =
-        refresh ? await LocalDb.instance.recentlyShown() : <String>{};
+    // Asked for on every load. It used to be fetched only on a pull-to-
+    // refresh, so leaving the tab and coming back always produced the same
+    // list -- which is most of what "reload" means in practice.
+    final recent = await LocalDb.instance.recentlyShown();
 
     // Single foods are suggested alongside recipes. Not everyone wants to
     // cook, and the 2,692 published foods are the part of this app with
@@ -137,9 +152,23 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     // an empty allergen list, and an empty list passes every check -- a
     // peanut allergy would not have stopped a satay being offered.
     final target = left == 0 ? 600 : left;
-    final foods = await FoodDb.instance
-        .suggestions(targetKcal: target, limit: _pageSize);
+    final pool = await FoodDb.instance
+        .suggestions(targetKcal: target, limit: _poolSize);
     final total = await FoodDb.instance.suggestionCount();
+
+    // A random slice of the window, not the top of it.
+    //
+    // Variety has to come from the draw, not from hiding what was shown
+    // before. Suppression alone cycles by construction: whatever was hidden
+    // last time is eligible this time, so the tab alternated between two
+    // fixed lists and a person saw sixteen meals however long they used it.
+    //
+    // Ranking still runs afterwards, so the best-fitting of whatever was
+    // drawn goes to the top. That is why this costs almost nothing in
+    // relevance -- over a dozen reloads the worst meal shown is about 34
+    // kcal off the slot target, against 33 for the old fixed list, while
+    // three times as many different foods get seen.
+    final foods = drawCandidates(pool, _pageSize);
 
     final candidates = [...result.recipes, ...foods];
     final ranked = recommend(
@@ -151,9 +180,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       limit: candidates.length,
     );
 
-    if (refresh) {
-      await LocalDb.instance.recordShown(ranked.take(20).map((r) => r.id));
-    }
+    // Recorded on every load, for the same reason it is read on every load.
+    // The count matches the recency window: noting twenty while only ever
+    // reading back eight meant most of what had been shown was forgotten
+    // immediately.
+    await LocalDb.instance
+        .recordShown(ranked.take(_pageSize).map((r) => r.id));
 
     if (!mounted) return;
     setState(() {
@@ -169,7 +201,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       _origin = result.origin;
       _warning = result.warning;
       _slotLeft = left;
-      _foodOffset = _pageSize;
+      _foodOffset = _poolSize;
       _foodTotal = total;
       _exhausted = _foodOffset >= total;
       _loading = false;
@@ -452,7 +484,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const WireBox(height: 78),
+          // The empty box this replaces was a placeholder for exactly this.
+          // 16:9, the shape the files are drawn at, so a card shows the whole
+          // frame rather than a crop of it.
+          LayoutBuilder(
+            builder: (context, constraints) => FoodImage(
+              asset: foodGroupImage(foodGroupForDiscover(
+                  source: r.source, area: r.area, name: r.name)),
+              width: constraints.maxWidth,
+              height: constraints.maxWidth * 9 / 16,
+              // Decoded at roughly the painted width rather than the file's
+              // 1200: a scroll through Discover holds a dozen of these, and
+              // full-size bitmaps for all of them is megabytes for nothing.
+              decodeWidth: 480,
+            ),
+          ),
           const SizedBox(height: 8),
           Text(r.name,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),

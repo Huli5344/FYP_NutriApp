@@ -850,6 +850,68 @@ String foodGroupImage(String? group) {
   return slug.isEmpty ? fallbackFoodImage : 'assets/food_groups/$slug.webp';
 }
 
+/// Which group's picture to draw for something shown in Discover.
+///
+/// Discover lists two different things as one feed. A Health Promotion Board
+/// food carries its real group in `area` -- `suggestions()` puts it there --
+/// so that one is exact: chicken rice is "Poultry" because the dataset says
+/// so.
+///
+/// A recipe from TheMealDB has no food group at all. What it has is a name
+/// and a cuisine, so the group is guessed from the name against the keywords
+/// below. That is a guess, and it is only acceptable because of what it
+/// decides: a picture. A wrong guess shows a bowl of grains beside a stew,
+/// which is untidy. The same guesswork would not be acceptable for an
+/// allergen, which is why the allergen tags are derived at build time from a
+/// reviewed list instead.
+///
+/// Unmatched recipes get "Mixed", a plate divided into portions, rather than
+/// the fallback bowl -- a cooked dish of several things is what Mixed means,
+/// and it is nearly always nearer the truth than nothing.
+String foodGroupForDiscover({String? source, String? area, String? name}) {
+  // The dataset's own answer, when there is one.
+  if (source == 'hpb') return area ?? '';
+
+  final text = (name ?? '').toLowerCase();
+  const guesses = <String, List<String>>{
+    'Poultry': ['chicken', 'turkey', 'duck', 'poussin'],
+    'Fish and seafood': ['fish', 'salmon', 'tuna', 'prawn', 'shrimp', 'crab',
+        'squid', 'mussel', 'cod', 'seafood', 'anchov', 'sardine', 'herring'],
+    'Meat and alternatives': ['beef', 'lamb', 'pork', 'mutton', 'steak',
+        'bacon', 'sausage', 'ham', 'meatball', 'burger', 'ribs', 'goat',
+        'veal', 'tofu'],
+    'Desserts': ['cake', 'pudding', 'tart', 'pie', 'brownie', 'custard',
+        'ice cream', 'cheesecake', 'trifle', 'crumble', 'dessert', 'mousse'],
+    'Grains and staples': ['pasta', 'rice', 'noodle', 'bread', 'risotto',
+        'lasagne', 'spaghetti', 'couscous', 'polenta', 'pancake', 'toast',
+        'dumpling', 'pizza', 'porridge', 'oat'],
+    'Vegetables': ['salad', 'vegetable', 'veggie', 'spinach', 'broccoli',
+        'cauliflower', 'mushroom', 'potato', 'aubergine', 'courgette'],
+    'Nuts and legumes': ['lentil', 'bean', 'chickpea', 'dhal', 'dal',
+        'hummus', 'peanut'],
+    'Dairy and eggs': ['omelette', 'omelet', 'frittata', 'quiche', 'cheese',
+        'yoghurt', 'yogurt'],
+    'Soups and stews': ['soup', 'stew', 'broth', 'curry', 'casserole'],
+  };
+
+  // Matched at a word START, not anywhere in the string. Plain `contains`
+  // put "Pancakes" in Desserts, because it contains "cake". A trailing
+  // boundary would be wrong too -- "beans" has to match "bean" -- so the
+  // boundary goes only at the front.
+  bool mentions(String word) =>
+      RegExp('\\b${RegExp.escape(word)}').hasMatch(text);
+
+  for (final entry in guesses.entries) {
+    if (entry.value.any(mentions)) {
+      // "Soups and stews" is not a group in the dataset, so it has no
+      // picture. It is in the list to stop a curry matching on "potato"
+      // further down and being drawn as a vegetable; a stew is a mixture.
+      return entry.key == 'Soups and stews' ? 'Mixed' : entry.key;
+    }
+  }
+  return 'Mixed';
+}
+
 /// A food group's picture.
 ///
 /// The files are 1200x675 and shared by every food in a group, so whatever

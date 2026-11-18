@@ -7,6 +7,8 @@
 /// Run with: flutter test
 library;
 
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nutriapp_diary/logic.dart';
 import 'package:nutriapp_diary/models.dart';
@@ -618,6 +620,111 @@ void main() {
               isEmpty,
               reason: '${r.name} is vegan but lists an animal allergen');
         }
+      }
+    });
+  });
+
+  group('Discover variety', () {
+    // The bug this group exists for: reloading Discover showed the same two
+    // lists in alternation. A person saw sixteen meals out of 2,647 however
+    // long they used the tab.
+    //
+    // Three things caused it, and only one is testable here -- the other two
+    // were a query without an offset and a SQLite sort that left a tie
+    // unspecified. What IS testable is the property that makes the tab vary
+    // at all: the candidates are drawn, not taken in order.
+
+    List<Recipe> poolOf(int n) =>
+        [for (var i = 0; i < n; i++) recipe('food$i', 580 + i)];
+
+    test('draws the number asked for', () {
+      expect(drawCandidates(poolOf(240), 60).length, 60);
+    });
+
+    test('draws everything when the pool is smaller than the count', () {
+      expect(drawCandidates(poolOf(10), 60).length, 10);
+    });
+
+    test('never draws the same candidate twice', () {
+      final drawn = drawCandidates(poolOf(240), 60);
+      expect(drawn.map((r) => r.id).toSet().length, drawn.length);
+    });
+
+    test('an empty count draws nothing', () {
+      expect(drawCandidates(poolOf(240), 0), isEmpty);
+    });
+
+    test('two draws from a wide pool differ', () {
+      // Seeded, so this cannot fail intermittently.
+      final a = drawCandidates(poolOf(240), 60, random: Random(1));
+      final b = drawCandidates(poolOf(240), 60, random: Random(2));
+      expect(a.map((r) => r.id).toList(), isNot(b.map((r) => r.id).toList()));
+    });
+
+    test('reloading does not alternate between two fixed lists', () {
+      // The regression, as the screen actually behaves: draw, rank, record
+      // what was shown, repeat. The old code took the top of a fixed pool
+      // instead of drawing, and produced exactly two distinct lists.
+      const pageSize = 60;
+      const display = 8;
+      final pool = poolOf(240);
+      final random = Random(7);
+      final shown = <String>[];
+      final lists = <String>{};
+
+      for (var reload = 0; reload < 12; reload++) {
+        final recent = shown.length <= pageSize
+            ? shown.toSet()
+            : shown.sublist(shown.length - pageSize).toSet();
+        final drawn = drawCandidates(pool, pageSize, random: random);
+        final ranked = recommend(drawn, const [], 'balanced', 600,
+            recentIds: recent, limit: drawn.length);
+        shown.addAll(ranked.take(pageSize).map((r) => r.id));
+        lists.add(ranked.take(display).map((r) => r.id).join(','));
+      }
+
+      // Before the fix this was exactly 2. Ten of twelve leaves room for an
+      // unlucky repeat without letting a two-cycle back in.
+      expect(lists.length, greaterThanOrEqualTo(10),
+          reason: 'Discover is cycling through a small set of lists again');
+    });
+
+    test('a person sees far more than one screenful over time', () {
+      const pageSize = 60;
+      const display = 8;
+      final pool = poolOf(240);
+      final random = Random(7);
+      final everSeen = <String>{};
+
+      for (var reload = 0; reload < 12; reload++) {
+        final ranked = recommend(
+            drawCandidates(pool, pageSize, random: random),
+            const [], 'balanced', 600,
+            limit: pageSize);
+        everSeen.addAll(ranked.take(display).map((r) => r.id));
+      }
+
+      // The old behaviour showed 16 across any number of reloads.
+      expect(everSeen.length, greaterThan(30),
+          reason: 'reloading is not surfacing new food');
+    });
+
+    test('drawing does not let an allergen through', () {
+      // Drawing happens BEFORE filtering, so this checks the order was not
+      // quietly reversed: a wider, randomised pool must not widen what is
+      // considered safe.
+      final pool = [
+        for (var i = 0; i < 60; i++)
+          recipe('peanut$i', 600, allergens: const ['peanut']),
+        for (var i = 0; i < 60; i++) recipe('safe$i', 600),
+      ];
+      for (var seed = 0; seed < 20; seed++) {
+        final picks = recommend(
+            drawCandidates(pool, 60, random: Random(seed)),
+            const ['peanut'], 'balanced', 600,
+            limit: 60);
+        expect(picks.every((r) => !r.allergens.contains('peanut')), isTrue,
+            reason: 'a peanut dish was offered on seed $seed');
       }
     });
   });

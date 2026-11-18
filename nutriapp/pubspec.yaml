@@ -31,17 +31,15 @@ flutter:
     # of the bundle on first run, because an asset cannot be opened in place.
     - assets/foods.db
 
-    # One 1200x675 picture per food group, plus fallback.webp. Commented out
-    # until the files exist: Flutter warns on a declared asset directory that
-    # is not there, and an empty folder does not survive a zip or a git
-    # clone, so declaring it early is a warning on every build for nothing.
+    # One 1200x675 picture per food group, plus fallback.webp. Sixteen files,
+    # about 94 KB in total. Shared by every food in a group rather than drawn
+    # per item: 2,692 individual pictures is not a thing anybody was going to
+    # make, and a group picture is honest about what it stands for.
     #
-    # Uncomment the line below once the images are in place. Nothing else
-    # changes -- FoodImage already draws a placeholder for a missing file, so
-    # the app looks the same today and picks the pictures up when they land.
-    # tools/check_food_images.py lists the sixteen filenames needed.
-    #
-    # - assets/food_groups/
+    # tools/check_food_images.py keeps the set and the dataset in step -- it
+    # slugifies every group in foods.db the way foodGroupImage() does and
+    # reports anything missing or orphaned.
+    - assets/food_groups/
 
   fonts:
     # IBM Plex Sans, bundled rather than fetched at runtime: a release build

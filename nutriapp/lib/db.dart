@@ -808,14 +808,33 @@ class LocalDb {
   }
 
   // -------------------------------------------------------------- shown
-  Future<Set<String>> recentlyShown() async {
+  /// What Discover has put in front of this person lately.
+  ///
+  /// The default covers rather more than one screenful on purpose. It used to
+  /// be eight, while `recordShown` wrote twenty, so the window was smaller
+  /// than what had just been displayed -- and it only ever reached into the
+  /// most recent batch. The batch before that became eligible again, which
+  /// made the tab alternate between two fixed lists on every reload.
+  ///
+  /// `rowid DESC` is the second sort key because every row written by one
+  /// call to `recordShown` carries the same timestamp. Ordering on the
+  /// timestamp alone leaves ties for SQLite to break however it likes, and
+  /// which rows came back decided whether the tab cycled between two lists
+  /// or showed one list forever. Neither was chosen; both were accidents of
+  /// an unspecified sort.
+  Future<Set<String>> recentlyShown({int limit = 60}) async {
     final db = await database;
-    final rows =
-        await db.query('shown', orderBy: 'shown_at DESC', limit: 8);
+    final rows = await db.query('shown',
+        orderBy: 'shown_at DESC, rowid DESC', limit: limit);
     return rows.map((r) => '${r['recipe_id']}').toSet();
   }
 
-  Future<void> recordShown(Iterable<String> ids) async {
+  /// Note that these were shown, and forget the oldest.
+  ///
+  /// The table had no upper bound: every reload added twenty rows and nothing
+  /// removed any, so a well-used install accumulated them forever to serve a
+  /// query that only ever reads the newest few dozen.
+  Future<void> recordShown(Iterable<String> ids, {int keep = 500}) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
     final batch = db.batch();
@@ -823,6 +842,12 @@ class LocalDb {
       batch.insert('shown', {'recipe_id': id, 'shown_at': now});
     }
     await batch.commit(noResult: true);
+
+    await db.rawDelete(
+      'DELETE FROM shown WHERE rowid NOT IN '
+      '(SELECT rowid FROM shown ORDER BY shown_at DESC, rowid DESC LIMIT ?)',
+      [keep],
+    );
   }
 
   /// Clear recorded entries so the app can be demonstrated again.
