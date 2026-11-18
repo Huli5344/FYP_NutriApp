@@ -5,9 +5,18 @@
 /// because onboarding runs once, and without this screen a profile could be
 /// entered but never corrected.
 ///
-/// Editing reuses the onboarding flow rather than duplicating it as a second
-/// form. Two forms over the same fields drift apart; the validation rules would
-/// have to be written twice and would eventually disagree.
+/// Each field is edited on its own. Correcting a mistyped height used to mean
+/// walking the whole setup flow again -- five screens and every answer
+/// re-confirmed, to change one number. The flow still runs for a profile that
+/// does not exist yet, where the order teaches what is being asked and why;
+/// it is the wrong shape for a correction.
+///
+/// The risk in having two ways to edit the same fields is that they drift:
+/// the bounds get written twice and one copy is widened. So neither path
+/// carries its own rules. Both read profile_fields.dart, which holds the
+/// options, the bounds and the messages, and every save here goes through
+/// `applyProfileChange`, which rebuilds the derived values rather than
+/// letting a new height sit beside a target computed from the old one.
 library;
 
 import 'package:flutter/material.dart';
@@ -17,8 +26,10 @@ import '../api.dart';
 import '../db.dart';
 import '../logic.dart';
 import '../models.dart';
+import '../profile_fields.dart';
 import '../session.dart';
 import '../ui.dart';
+import 'edit_field_screen.dart';
 import 'login_screen.dart';
 import 'onboarding/onboarding_screen.dart';
 
@@ -64,13 +75,229 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  Future<void> _edit() async {
+  /// The guided flow. Still used to create a profile that does not exist,
+  /// and offered as "Review everything" for anyone who would rather be walked
+  /// through all of it than tap fields one at a time.
+  Future<void> _runSetupFlow() async {
     final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
           builder: (_) => OnboardingScreen(existing: _profile)),
     );
     if (changed == true) _load();
+  }
+
+  // -------------------------------------------------------------------------
+  // Editing one field
+  //
+  // Every one of these ends at `_apply`, and none of them writes a profile
+  // itself. That is what keeps a changed height from leaving a calorie target
+  // behind that was computed from the old one.
+  // -------------------------------------------------------------------------
+
+  /// Save a rebuilt profile and redraw.
+  Future<void> _apply(UserProfile updated) async {
+    await LocalDb.instance.saveProfile(updated);
+    await _load();
+  }
+
+  Future<void> _editName() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await editValue(
+      context,
+      title: 'Name',
+      label: 'Name',
+      initial: profile.name,
+      validate: validateName,
+      keyboard: TextInputType.name,
+    );
+    if (result == null) return;
+    await _apply(applyProfileChange(profile, name: result.trim()));
+  }
+
+  Future<void> _editAge() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await editValue(
+      context,
+      title: 'Age',
+      label: 'Age',
+      initial: '${profile.age}',
+      validate: validateAge,
+      help: 'Used with your height, weight and activity level to estimate '
+          'what your body uses at rest.',
+      suffix: 'years',
+      keyboard: TextInputType.number,
+    );
+    if (result == null) return;
+    await _apply(applyProfileChange(profile, age: int.parse(result.trim())));
+  }
+
+  Future<void> _editHeight() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await editValue(
+      context,
+      title: 'Height',
+      label: 'Height',
+      initial: '${profile.heightCm}',
+      validate: validateHeight,
+      suffix: 'cm',
+      keyboard: const TextInputType.numberWithOptions(decimal: true),
+    );
+    if (result == null) return;
+    await _apply(
+        applyProfileChange(profile, heightCm: double.parse(result.trim())));
+  }
+
+  Future<void> _editGender() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await chooseOne(
+      context,
+      title: 'Gender',
+      options: genderOptions,
+      current: profile.gender,
+      help: 'Affects the resting-burn estimate. "Prefer not to say" uses an '
+          'average of the two formulas.',
+    );
+    if (result == null) return;
+    await _apply(applyProfileChange(profile, gender: result));
+  }
+
+  Future<void> _editActivity() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await chooseOne(
+      context,
+      title: 'Activity level',
+      options: activityOptions,
+      current: profile.activityLevel,
+      help: 'Scales the resting-burn estimate into a daily figure.',
+    );
+    if (result == null) return;
+    await _apply(applyProfileChange(profile, activityLevel: result));
+  }
+
+  Future<void> _editGoal() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await chooseOne(
+      context,
+      title: 'Goal',
+      options: goalOptions,
+      current: profile.goal,
+    );
+    if (result == null || result == profile.goal) return;
+    // `chooseOne` was awaited, so this screen may have gone away while the
+    // dialog was open. Everything below uses `context` again.
+    if (!mounted) return;
+
+    // Said out loud rather than done silently. A target weight belongs to a
+    // goal that is about reaching a weight; changing to one that is not
+    // clears it, and somebody who had entered 68 kg should find out here
+    // rather than by noticing it gone.
+    if (!goalUsesTargetWeight(result) && profile.targetWeightKg != null) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Clear your target weight?'),
+          content: Text(
+              '"$result" is not about reaching a particular weight, so your '
+              'target of ${profile.targetWeightKg} kg will be cleared. You '
+              'can set it again if you change goal later.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Change goal'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    await _apply(applyProfileChange(profile, goal: result));
+  }
+
+  Future<void> _editTargetWeight() async {
+    final profile = _profile;
+    if (profile == null) return;
+
+    if (!goalUsesTargetWeight(profile.goal)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('A target weight applies to goals about reaching a '
+            'weight. Your goal is "${profile.goal}".'),
+      ));
+      return;
+    }
+
+    final result = await editValue(
+      context,
+      title: 'Target weight',
+      label: 'Target weight',
+      initial: profile.targetWeightKg == null
+          ? ''
+          : '${profile.targetWeightKg}',
+      validate: validateTargetWeight,
+      help: 'What you are working towards. Leave it empty if you would '
+          'rather not set one.',
+      suffix: 'kg',
+      keyboard: const TextInputType.numberWithOptions(decimal: true),
+      clearLabel: profile.targetWeightKg == null ? null : 'Clear',
+    );
+    if (result == null) return;
+
+    final trimmed = result.trim();
+    await _apply(applyProfileChange(profile,
+        targetWeightKg: trimmed.isEmpty ? null : double.parse(trimmed)));
+  }
+
+  Future<void> _editPreferences() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditChoicesScreen(
+          title: 'Preferences',
+          description: 'How you prefer to eat. Suggestions are narrowed to '
+              'match. Select all that apply.',
+          options: preferenceOptions,
+          selected: profile.preferences,
+        ),
+      ),
+    );
+    if (result == null) return;
+    await _apply(applyProfileChange(profile, preferences: result));
+  }
+
+  Future<void> _editRestrictions() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final result = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditChoicesScreen(
+          title: 'Restrictions',
+          description: 'Foods you need to avoid. Meals listing any of these '
+              'are removed before anything is ranked.',
+          options: restrictionOptions,
+          selected: profile.restrictions,
+          warning: true,
+          footnote: (chosen) => 'Matched against recipes tagged '
+              '${normaliseAllergens(chosen).join(', ')}.',
+        ),
+      ),
+    );
+    if (result == null) return;
+    await _apply(applyProfileChange(profile, restrictions: result));
   }
 
   /// Override the generated target, or go back to it.
@@ -131,15 +358,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    final value = int.tryParse(result.trim());
-    if (value == null || value < minDailyTarget || value > maxDailyTarget) {
+    final message = validateDailyTarget(result);
+    if (message != null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Enter a target between $minDailyTarget and '
-            '$maxDailyTarget kcal.'),
-      ));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
       return;
     }
+    final value = int.parse(result.trim());
 
     await LocalDb.instance.saveProfile(profile.copyWith(
       targetKcal: value,
@@ -177,36 +403,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (result == null) return;
 
-    final kg = double.tryParse(result.trim());
-    if (kg == null || kg < 25 || kg > 400) {
+    final message = validateWeight(result);
+    if (message != null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Enter a weight in kilograms, between 25 and 400.'),
-      ));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
       return;
     }
+    final kg = double.parse(result.trim());
 
     await LocalDb.instance.logWeight(kg);
 
     // The new weight changes the calculated target, so the profile is rebuilt
     // rather than left describing a body that has changed. A target set by
     // hand is preserved, which is what buildProfile's manual argument is for.
-    final rebuilt = buildProfile(
-      name: profile.name,
-      email: profile.email,
-      age: profile.age,
-      gender: profile.gender,
-      heightCm: profile.heightCm,
-      weightKg: kg,
-      activityLevel: profile.activityLevel,
-      goal: profile.goal,
-      targetWeightKg: profile.targetWeightKg,
-      preferences: profile.preferences,
-      restrictions: profile.restrictions,
-      manualTargetKcal: profile.targetIsManual ? profile.targetKcal : null,
+    await _apply(applyProfileChange(profile, weightKg: kg));
+  }
+
+  /// A diet sub-heading with an edit control beside it.
+  Widget _dietHeading(String label, VoidCallback onEdit) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: tLabel),
+        InkWell(
+          onTap: onEdit,
+          borderRadius: BorderRadius.circular(4),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text('Edit',
+                style: TextStyle(fontSize: 13, color: AppColors.accent)),
+          ),
+        ),
+      ],
     );
-    await LocalDb.instance.saveProfile(rebuilt);
-    _load();
   }
 
   Future<void> _syncNow() async {
@@ -367,7 +597,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   'No profile saved yet. Setting one up is what gives you a '
                   'calorie target and filters suggestions.'),
               const SizedBox(height: 12),
-              WireButton(label: 'Set up my profile', onPressed: _edit),
+              WireButton(label: 'Set up my profile', onPressed: _runSetupFlow),
             ],
           ),
         ),
@@ -378,9 +608,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: AppBar(
         title: const Text('Profile'),
         actions: [
-          TextButton(
-            onPressed: _edit,
-            child: const Text('Edit', style: TextStyle(color: AppColors.mute)),
+          // Tapping a field edits that field. This stays for anyone who
+          // would rather be walked through every answer in order, which is
+          // also the only way to revisit the explanations the setup flow
+          // gives for each question.
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'setup') _runSetupFlow();
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                  value: 'setup', child: Text('Review everything')),
+            ],
           ),
         ],
       ),
@@ -395,14 +634,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Column(
               children: [
-                WireField(label: 'Goal', value: profile.goal),
+                WireField(
+                    label: 'Goal', value: profile.goal, onTap: _editGoal),
                 WireField(
                     label: 'Target weight',
-                    value: profile.targetWeightKg == null
-                        ? 'Not set'
-                        : '${profile.targetWeightKg} kg'),
+                    value: !goalUsesTargetWeight(profile.goal)
+                        ? 'Not used for this goal'
+                        : profile.targetWeightKg == null
+                            ? 'Not set'
+                            : '${profile.targetWeightKg} kg',
+                    onTap: _editTargetWeight),
                 WireField(
-                    label: 'Current weight', value: '${profile.weightKg} kg'),
+                    label: 'Current weight',
+                    value: '${profile.weightKg} kg',
+                    onTap: _logWeight),
                 WireField(
                     label: 'Macro split',
                     value: _splitPhrase(macroSplitFor(profile.goal)),
@@ -442,14 +687,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Column(
               children: [
-                WireField(label: 'Name', value: profile.name),
-                WireField(label: 'Age', value: '${profile.age}'),
                 WireField(
-                    label: 'Gender', value: profile.gender ?? 'Not specified'),
-                WireField(label: 'Height', value: '${profile.heightCm} cm'),
+                    label: 'Name', value: profile.name, onTap: _editName),
+                WireField(
+                    label: 'Age', value: '${profile.age}', onTap: _editAge),
+                WireField(
+                    label: 'Gender',
+                    value: profile.gender ?? 'Not specified',
+                    onTap: _editGender),
+                WireField(
+                    label: 'Height',
+                    value: '${profile.heightCm} cm',
+                    onTap: _editHeight),
                 WireField(
                     label: 'Activity',
                     value: profile.activityLevel,
+                    onTap: _editActivity,
                     last: true),
               ],
             ),
@@ -461,7 +714,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Preferences', style: tLabel),
+                _dietHeading('Preferences', _editPreferences),
                 const SizedBox(height: 6),
                 if (profile.preferences.isEmpty)
                   const Text('None chosen. Suggestions are not narrowed.',
@@ -475,7 +728,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 const SizedBox(height: 12),
-                const Text('Restrictions', style: tLabel),
+                _dietHeading('Restrictions', _editRestrictions),
                 const SizedBox(height: 6),
                 if (profile.restrictions.isEmpty)
                   const Text('None recorded. Nothing is filtered out.',

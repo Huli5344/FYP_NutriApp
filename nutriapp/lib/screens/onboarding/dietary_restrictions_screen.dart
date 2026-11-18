@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../profile_fields.dart';
+
 class DietaryRestrictionsScreen extends StatelessWidget {
   final List<String> selectedRestrictions;
 
@@ -13,17 +15,6 @@ class DietaryRestrictionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> restrictions = [
-      'Peanuts',
-      'Tree Nuts',
-      'Dairy',
-      'Eggs',
-      'Gluten',
-      'Soy',
-      'Fish',
-      'Shellfish',
-      'Sesame',
-    ];
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -46,7 +37,7 @@ class DietaryRestrictionsScreen extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final restriction in restrictions)
+            for (final restriction in restrictionOptions)
               FilterChip(
                 label: Text(restriction),
                 selected: selectedRestrictions.contains(restriction),

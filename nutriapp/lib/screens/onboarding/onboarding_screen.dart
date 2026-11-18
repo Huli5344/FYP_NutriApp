@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 
 import '../../db.dart';
 import '../../logic.dart';
+import '../../profile_fields.dart';
 import '../../models.dart';
 import '../../ui.dart';
 import 'about_you_screen.dart';
@@ -95,46 +96,33 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   static String _trim(double value) =>
       value == value.roundToDouble() ? '${value.round()}' : '$value';
 
-  bool get _goalUsesTargetWeight =>
-      dietaryGoal == 'Lose Weight' ||
-      dietaryGoal == 'Gain Weight' ||
-      dietaryGoal == 'Build Muscle';
+  bool get _goalUsesTargetWeight => goalUsesTargetWeight(dietaryGoal);
 
   // Navigate forward
   void nextPage() {
     if (_currentPage == 0) {
-      final name = nameController.text.trim();
-      final age = int.tryParse(ageController.text);
-      final height = double.tryParse(heightController.text);
-      final weight = double.tryParse(weightController.text);
-
-      if (name.isEmpty) {
-        _complain('Please enter your name.');
-        return;
-      }
-      // Bounds are deliberately wide. They exist to catch a typed-in
-      // centimetre value in the kilogram box, not to judge anyone's body.
-      if (age == null || age < 13 || age > 120) {
-        _complain('Please enter an age between 13 and 120.');
-        return;
-      }
-      if (height == null || height < 90 || height > 250) {
-        _complain('Please enter a height in centimetres, between 90 and 250.');
-        return;
-      }
-      if (weight == null || weight < 25 || weight > 400) {
-        _complain('Please enter a weight in kilograms, between 25 and 400.');
-        return;
+      // The bounds and their wording are in profile_fields.dart, so this
+      // flow and the per-field editor on the profile tab cannot disagree
+      // about what is acceptable. They used to be written out in both.
+      for (final message in [
+        validateName(nameController.text),
+        validateAge(ageController.text),
+        validateHeight(heightController.text),
+        validateWeight(weightController.text),
+      ]) {
+        if (message != null) {
+          _complain(message);
+          return;
+        }
       }
     }
 
     if (_currentPage == 1 &&
         _goalUsesTargetWeight &&
         targetController.text.trim().isNotEmpty) {
-      final target = double.tryParse(targetController.text);
-      if (target == null || target < 25 || target > 400) {
-        _complain('Please enter a target weight in kilograms, or leave it '
-            'empty.');
+      final message = validateTargetWeight(targetController.text);
+      if (message != null) {
+        _complain(message);
         return;
       }
     }

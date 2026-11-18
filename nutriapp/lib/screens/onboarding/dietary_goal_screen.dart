@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../profile_fields.dart';
+
 class DietaryGoalScreen extends StatelessWidget {
   // Current goal
   final String dietaryGoal;
@@ -19,18 +21,11 @@ class DietaryGoalScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> goals = [
-      'Lose Weight',
-      'Maintain Weight',
-      'Gain Weight',
-      'Build Muscle',
-      'Eat Healthier',
-    ];
+    // goalOptions and goalUsesTargetWeight live in profile_fields.dart, so
+    // this screen and the per-field editor on the profile tab offer the same
+    // choices and agree on which goals carry a target weight.
 
-    final bool showTargetWeight =
-        dietaryGoal == 'Lose Weight' ||
-        dietaryGoal == 'Gain Weight' ||
-        dietaryGoal == 'Build Muscle';
+    final bool showTargetWeight = goalUsesTargetWeight(dietaryGoal);
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -60,7 +55,7 @@ class DietaryGoalScreen extends StatelessWidget {
           },
           child: Column(
             children: [
-              for (final goal in goals)
+              for (final goal in goalOptions)
                 Card(
                   child: RadioListTile<String>(
                     title: Text(goal),

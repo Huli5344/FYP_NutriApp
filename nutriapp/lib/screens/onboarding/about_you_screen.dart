@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../profile_fields.dart';
+
 class AboutYouScreen extends StatelessWidget {
   // Controllers received from the parent
   final TextEditingController nameController;
@@ -76,12 +78,7 @@ class AboutYouScreen extends StatelessWidget {
             labelText: 'Gender (optional)',
             border: OutlineInputBorder(),
           ),
-          items: [
-            'Female', 
-            'Male', 
-            'Non-binary', 
-            'Prefer not to say'
-          ].map((value) {
+          items: genderOptions.map((value) {
             return DropdownMenuItem(
               value: value,
               child: Text(value),
@@ -120,12 +117,7 @@ class AboutYouScreen extends StatelessWidget {
             labelText: 'Activity Level',
             border: OutlineInputBorder(),
           ),
-          items: [
-            'Sedentary',
-            'Lightly Active',
-            'Moderately Active',
-            'Very Active',
-          ].map((value) {
+          items: activityOptions.map((value) {
             return DropdownMenuItem(
               value: value,
               child: Text(value),

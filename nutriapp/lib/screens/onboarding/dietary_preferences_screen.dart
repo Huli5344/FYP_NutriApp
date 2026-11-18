@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../profile_fields.dart';
+
 class DietaryPreferencesScreen extends StatelessWidget {
   // Selected values from parent
   final List<String> selectedPreferences;
@@ -15,19 +17,6 @@ class DietaryPreferencesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> preferences = [
-      // Every option here maps to a tag the recipe data actually carries, via
-      // dietTokens in logic.dart. An option with no counterpart in the data
-      // could be chosen and would then change nothing, which is worse than not
-      // offering it.
-      'Vegetarian',
-      'Vegan',
-      'Pescatarian',
-      'Halal',
-      'High protein',
-      'High fibre',
-      'Low carb',
-    ];
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -46,7 +35,7 @@ class DietaryPreferencesScreen extends StatelessWidget {
 
         const SizedBox(height: 20),
 
-        for (final preference in preferences)
+        for (final preference in preferenceOptions)
           CheckboxListTile(
             title: Text(preference),
             value: selectedPreferences.contains(preference),
