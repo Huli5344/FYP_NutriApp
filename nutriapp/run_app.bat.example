@@ -1,0 +1,34 @@
+@echo off
+REM ---------------------------------------------------------------------------
+REM Run the app with NutriBot's Gemini key compiled in.
+REM
+REM Copy this to run_app.bat, paste your own key, and run it from the nutriapp
+REM folder. run_app.bat is in .gitignore; this .example file is not.
+REM
+REM WHY THIS FILE EXISTS: --dart-define values are compile-time constants. Set
+REM one in a terminal with `set` and Flutter will not see it; run `flutter run`
+REM without it and the app builds fine, shows the chat button, and NutriBot
+REM answers every question with "no API key". It looks like the chat is broken
+REM rather than like the key is missing. This script passes them together so
+REM that cannot happen.
+REM
+REM SECURITY: a key passed this way is COMPILED INTO THE APK and can be
+REM extracted by anyone who has the file. That is acceptable for a local demo
+REM and not for anything published. The fix is to move the Gemini call behind
+REM the Flask backend, which already holds secrets safely -- the app would
+REM then call your own server and the key would never leave it. Only the
+REM GeminiClient line in main.dart has to change; everything else already
+REM depends on the AiClient interface.
+REM ---------------------------------------------------------------------------
+
+REM Get a key from https://aistudio.google.com/apikey
+set GEMINI_API_KEY=paste-your-key-here
+
+REM Check the model name against Google's current list before changing it.
+REM A name that does not exist fails with a 404 that NutriBot reports as
+REM "Model ... was not found".
+set GEMINI_MODEL=gemini-3.5-flash-lite
+
+flutter run ^
+  --dart-define=GEMINI_API_KEY=%GEMINI_API_KEY% ^
+  --dart-define=GEMINI_MODEL=%GEMINI_MODEL%

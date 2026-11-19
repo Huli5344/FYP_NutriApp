@@ -22,6 +22,11 @@ import 'screens/diary_screen.dart';
 import 'screens/discover_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/insights_screen.dart';
+import 'chat/chat_config.dart';
+import 'chat/chat_controller.dart';
+import 'chat/chat_sheet.dart';
+import 'chat/chat_storage.dart';
+import 'chat/gemini_client.dart';
 import 'screens/login_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/profile_screen.dart';
@@ -118,6 +123,25 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> with WidgetsBindingObserver {
   int _tab = 0;
 
+  /// NutriBot's conversation, held here rather than inside the sheet.
+  ///
+  /// Built once and kept for the life of the Shell, for two reasons: a reply
+  /// that is still streaming survives the sheet being closed, and the history
+  /// is not re-read from storage every time somebody taps the button.
+  ///
+  /// `GeminiClient` is named in exactly one place -- here. Everything else
+  /// depends on the `AiClient` interface, so moving the Gemini call behind
+  /// the Flask backend later is a change to this constructor and nothing
+  /// else. That matters: the key is compiled into the APK as it stands, and
+  /// anyone with the APK can read it out.
+  late final ChatController _chat = ChatController(
+    client: GeminiClient(
+      apiKey: AppConfig.geminiApiKey,
+      model: AppConfig.geminiModel,
+    ),
+    storage: SharedPrefsChatStorage(),
+  );
+
   // Rebuilt on every tab change so each screen reloads from the local
   // database rather than showing figures captured when the app started. This
   // is also how a profile edit reaches the other tabs: they re-read it.
@@ -133,6 +157,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _chat.dispose();
     super.dispose();
   }
 
@@ -197,6 +222,22 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     ];
 
     return Scaffold(
+      // Bottom left, mirroring the add button each screen puts bottom right.
+      //
+      // It sits on the Shell, not on the individual screens, so it is present
+      // on all five tabs -- including Insights and Profile, which have no
+      // button of their own. Each screen's own Scaffold handles the right-hand
+      // side; this one owns the left.
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+      floatingActionButton: FloatingActionButton(
+        // Every FloatingActionButton on screen at once needs its own tag.
+        // Two sharing the default collide during the open transition and
+        // throw. The screens' own buttons are tagged for the same reason.
+        heroTag: 'shell-chat',
+        tooltip: 'Ask NutriBot',
+        onPressed: () => showChatSheet(context, _chat),
+        child: const Icon(Icons.chat_bubble_outline),
+      ),
       body: SafeArea(child: screens[_tab]),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(

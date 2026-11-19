@@ -12,3 +12,7 @@ __pycache__/
 # The local SQLite database. Development data, including password hashes for
 # whatever test accounts you made. Not secret, but not worth publishing.
 backend/module.db
+
+# Holds the Gemini API key for NutriBot. run_app.bat.example is the template
+# and is committed; this one is not.
+nutriapp/run_app.bat
