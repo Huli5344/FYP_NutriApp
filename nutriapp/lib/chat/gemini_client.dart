@@ -27,7 +27,8 @@ class GeminiClient implements AiClient {
   }) async* {
     if (apiKey.isEmpty) {
       throw AiException(
-        'No API key found. Run the app with --dart-define-from-file=env.json.',
+        'No API key was compiled in. This build talks to Gemini '
+        'directly, so it needs --dart-define=GEMINI_API_KEY=...',
       );
     }
 
@@ -127,7 +128,7 @@ class GeminiClient implements AiClient {
         return 'The request was rejected. Check the model name and API key.';
       case 401:
       case 403:
-        return 'The API key was rejected. Check it in env.json.';
+        return 'The API key was rejected. Check GEMINI_API_KEY.';
       case 404:
         return 'Model "$model" was not found. Check GEMINI_MODEL.';
       case 429:

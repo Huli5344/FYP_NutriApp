@@ -294,6 +294,20 @@ CREATE TABLE IF NOT EXISTS shown (
     recipe_id   {text} NOT NULL,
     shown_at    {text} NOT NULL
 );
+
+-- One row per question put to the assistant, so a daily cap can be applied.
+--
+-- The Gemini key behind /api/chat belongs to whoever runs this server, and
+-- registration is open: without a cap, one account with a script can spend
+-- the whole free quota in an afternoon and the assistant stops working for
+-- everyone. A row per message is enough to count, and carries no content --
+-- knowing somebody asked something is not the same as keeping what they
+-- asked, and there is no reason to keep the latter.
+CREATE TABLE IF NOT EXISTS chat_usage (
+    id          {serial},
+    user_id     {text} NOT NULL,
+    sent_at     {text} NOT NULL
+);
 """
 
 RECIPES = [
@@ -497,9 +511,9 @@ def init(force=False):
     # Schema work goes over the direct connection, never the pooled one.
     conn = connect(for_migration=True)
     if force and db.is_postgres():
-        for table in ("sessions", "shown", "weights", "entries", "profile",
-                      "custom_foods", "api_cache", "recipes", "foods", "meta",
-                      "settings", "users"):
+        for table in ("sessions", "shown", "chat_usage", "weights", "entries",
+                      "profile", "custom_foods", "api_cache", "recipes",
+                      "foods", "meta", "settings", "users"):
             conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
         conn.commit()
 
@@ -761,6 +775,53 @@ def admin_overview(conn):
             "SELECT COUNT(DISTINCT user_id) AS n FROM entries"
             " WHERE deleted = 0 AND substr(eaten_at, 1, 10) >= ?", week),
     }
+
+
+# --------------------------------------------------------------------------
+# The assistant's daily cap
+#
+# Counted in UTC rather than local time. The alternative is a cap that resets
+# at a different moment for each person, which is harder to reason about and
+# no fairer; and `sent_at` is already stored as UTC, so counting it any other
+# way would mean converting on read.
+# --------------------------------------------------------------------------
+
+# How long a counted message is kept. Long enough to answer "why did I hit
+# the cap", short enough that the table never becomes something to worry
+# about: a busy day is a few hundred rows.
+CHAT_USAGE_RETENTION_DAYS = 7
+
+
+def chat_messages_today(conn, user_id, today):
+    """How many questions this user has put to the assistant today.
+
+    `today` is a YYYY-MM-DD string in UTC, passed in rather than read from
+    the clock here so the tests can ask about a specific day.
+    """
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM chat_usage"
+        " WHERE user_id = ? AND substr(sent_at, 1, 10) = ?",
+        (user_id, today)).fetchone()
+    return row["n"] if row else 0
+
+
+def record_chat_message(conn, user_id, when=None):
+    """Count one question against the cap.
+
+    Recorded before the reply is streamed, not after. A reply that fails
+    halfway still cost the quota it spent, and counting on success would
+    make a request that is cancelled mid-stream free -- which is the one an
+    abusive client would send.
+    """
+    from datetime import datetime, timedelta, timezone
+    when = when or now_iso_utc()
+    conn.execute("INSERT INTO chat_usage (user_id, sent_at) VALUES (?, ?)",
+                 (user_id, when))
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(days=CHAT_USAGE_RETENTION_DAYS)).date().isoformat()
+    conn.execute("DELETE FROM chat_usage WHERE substr(sent_at, 1, 10) < ?",
+                 (cutoff,))
+    conn.commit()
 
 
 def now_iso_utc():

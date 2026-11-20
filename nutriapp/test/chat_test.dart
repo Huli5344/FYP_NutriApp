@@ -105,7 +105,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ChatSheet(controller: c, showKeyWarning: false),
+          body: ChatSheet(controller: c),
         ),
       ),
     );

@@ -61,5 +61,28 @@ services:
       - key: DATABASE_URL_UNPOOLED
         sync: false            # the DIRECT string (hostname has no -pooler)
 
+      # NutriBot. The key lives here rather than in the app: one compiled
+      # into the APK with --dart-define can be read back out of the file by
+      # anyone who has it, and an app built without the flag had no
+      # assistant at all. With this set, /api/chat answers and a plain
+      # `flutter run` build has a working chat.
+      #
+      # Get one from https://aistudio.google.com/apikey. Leave it unset and
+      # everything else still works -- /api/chat answers 503 and the chat
+      # says the assistant is not set up on the server.
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # Optional. Defaults to gemini-3.5-flash-lite; check the name against
+      # Google's current list before changing it.
+      - key: GEMINI_MODEL
+        sync: false
+
+      # Optional. Questions per account per day, resetting at midnight UTC.
+      # Defaults to 40. This is what stops one registration spending the
+      # whole free quota, so lower it rather than removing it.
+      - key: CHAT_DAILY_LIMIT
+        sync: false
+
       - key: PYTHON_VERSION
         value: "3.12"

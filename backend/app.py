@@ -21,6 +21,7 @@ which take a user and refuse to build a query without one.
 """
 
 import functools
+import json
 import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -30,6 +31,7 @@ from flask import (Flask, flash, g, jsonify, redirect, render_template,
 
 import accounts
 import admin
+import ai
 import database
 import db
 import logic
@@ -108,6 +110,17 @@ SETUP_EXEMPT = PUBLIC_ENDPOINTS | {"profile_setup", "logout", "api_recipes",
 # Answered without a connection, the keep-warm poll costs nothing, and the
 # database wakes only when somebody actually uses the app.
 DB_FREE_ENDPOINTS = {"static", "api_ping"}
+
+# How many questions one account may put to the assistant in a day.
+#
+# The Gemini key behind /api/chat is the app owner's, and anyone can
+# register. Without a cap, one account running a loop spends the free quota
+# and the assistant stops answering for everybody else. Forty is generous
+# for someone using the app and useless to a script.
+try:
+    CHAT_DAILY_LIMIT = int(os.environ.get("CHAT_DAILY_LIMIT") or 40)
+except ValueError:
+    CHAT_DAILY_LIMIT = 40
 
 
 def wants_json():
@@ -1405,6 +1418,127 @@ def api_me():
         "has_profile": g.has_profile,
         "profile": g.profile if g.has_profile else None,
     })
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    """NutriBot, with the key on this side of the wire.
+
+    The app used to call Gemini itself with a key compiled into the APK.
+    Anyone with the APK could pull that key out and spend it, and an app
+    built without the flag had no assistant at all. Now the app sends the
+    conversation here and this adds the key, the system prompt and the
+    limits.
+
+    Authentication is not checked in this function because it cannot be
+    skipped: `api_chat` is not in PUBLIC_ENDPOINTS, so before_request has
+    already turned an unauthenticated call into a 401. That is the reason
+    the allow-list is an allow-list.
+
+    The reply is streamed. Gunicorn runs with threads, so a reply in flight
+    occupies a thread rather than a worker, and the answer appears as it is
+    written instead of arriving whole half a minute later.
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "expected a JSON object"}), 400
+
+    try:
+        history = ai.clean_history(body.get("messages"))
+    except ai.AiError as exc:
+        return jsonify({"error": exc.message}), exc.status
+
+    if not ai.is_configured():
+        return jsonify({
+            "error": "The assistant is not set up on this server.",
+        }), 503
+
+    user_id = scoped_user()
+    today = datetime.now(timezone.utc).date().isoformat()
+    conn = database.connect()
+    try:
+        used = database.chat_messages_today(conn, user_id, today)
+        if used >= CHAT_DAILY_LIMIT:
+            return jsonify({
+                "error": f"You have reached today's limit of "
+                         f"{CHAT_DAILY_LIMIT} questions. It resets at "
+                         f"midnight UTC.",
+            }), 429
+        # Counted before the reply, not after: a reply that fails halfway
+        # still spent what it spent, and counting on success would make a
+        # request cancelled mid-stream free.
+        database.record_chat_message(conn, user_id)
+    finally:
+        conn.close()
+
+    stream = ai.stream_reply(history)
+
+    # Pull the first piece before returning a response, so a failure that
+    # happens immediately -- a rejected key, an unknown model -- comes back
+    # as a status code the app can act on. Once the headers are sent the
+    # status is fixed at 200 and an error can only be a message in the body.
+    try:
+        first = next(stream, None)
+    except ai.AiError as exc:
+        return jsonify({"error": exc.message}), exc.status
+    except Exception:                          # noqa: BLE001
+        # Same treatment as a failure further down the stream: logged here,
+        # described to the caller only in general terms. Without this the
+        # exception reaches Flask's handler, which in a debug build renders
+        # the traceback -- and the frames above this one hold the request,
+        # the connection string and the key.
+        app.logger.exception("chat failed before the reply began")
+        return jsonify({"error": "The assistant could not answer just now."}), 502
+
+    def events():
+        # The [DONE] below is deliberately NOT in a `finally`.
+        #
+        # When a client hangs up mid-reply -- taps Stop, locks the phone,
+        # loses signal -- the server closes this generator, which throws
+        # GeneratorExit in at whichever `yield` it was paused on. A `finally`
+        # that yields at that moment raises
+        # RuntimeError("generator ignored GeneratorExit"), which Python then
+        # reports as "Exception ignored in: <generator object events>". The
+        # reply still went out, so it looks like noise, but it means the
+        # cleanup path is wrong and it would print on every disconnect.
+        #
+        # GeneratorExit derives from BaseException, so the handlers below do
+        # not catch it and it propagates as it should. The outer `finally`
+        # only closes things, which is always safe; what it must not do is
+        # yield.
+        try:
+            try:
+                if first is not None:
+                    yield _sse({"text": first})
+                for chunk in stream:
+                    yield _sse({"text": chunk})
+            except ai.AiError as exc:
+                yield _sse({"error": exc.message})
+            except Exception:                  # noqa: BLE001
+                # Whatever this was, it is not something to describe to the
+                # person asking: an upstream traceback can quote the request
+                # back, and the request is their conversation.
+                app.logger.exception("chat stream failed")
+                yield _sse({"error": "The assistant stopped unexpectedly."})
+            yield "data: [DONE]\n\n"
+        finally:
+            # This is what releases the connection to Gemini when a client
+            # goes away. Without it the upstream response stays open until
+            # the garbage collector happens to reach it, holding a socket
+            # and, on a worker with threads, a slot that could serve
+            # somebody else.
+            stream.close()
+
+    return app.response_class(events(), mimetype="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        # Render sits behind a proxy that would otherwise hold the whole
+        # reply back and deliver it in one piece, which looks like a hang.
+        "X-Accel-Buffering": "no",
+    })
+
+
+def _sse(payload):
+    return f"data: {json.dumps(payload)}\n\n"
 
 
 @app.route("/api/foods")

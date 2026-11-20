@@ -1,24 +1,27 @@
 @echo off
 REM ---------------------------------------------------------------------------
-REM Run the app with NutriBot's Gemini key compiled in.
+REM Run the app against Gemini DIRECTLY, with a key compiled in.
 REM
-REM Copy this to run_app.bat, paste your own key, and run it from the nutriapp
+REM YOU PROBABLY DO NOT NEED THIS ANY MORE. The key now lives on the Flask
+REM backend and the app calls /api/chat, so a plain
+REM
+REM     flutter run
+REM
+REM builds an app whose assistant works and whose APK contains no secret.
+REM That is the normal way to run it, and the way to build anything you hand
+REM to somebody else.
+REM
+REM This script is for working on the chat itself with no server running, or
+REM against a backend that has no key set. It makes the app talk to Google
+REM directly instead.
+REM
+REM Copy it to run_app.bat, paste your own key, and run it from the nutriapp
 REM folder. run_app.bat is in .gitignore; this .example file is not.
 REM
-REM WHY THIS FILE EXISTS: --dart-define values are compile-time constants. Set
-REM one in a terminal with `set` and Flutter will not see it; run `flutter run`
-REM without it and the app builds fine, shows the chat button, and NutriBot
-REM answers every question with "no API key". It looks like the chat is broken
-REM rather than like the key is missing. This script passes them together so
-REM that cannot happen.
-REM
 REM SECURITY: a key passed this way is COMPILED INTO THE APK and can be
-REM extracted by anyone who has the file. That is acceptable for a local demo
-REM and not for anything published. The fix is to move the Gemini call behind
-REM the Flask backend, which already holds secrets safely -- the app would
-REM then call your own server and the key would never leave it. Only the
-REM GeminiClient line in main.dart has to change; everything else already
-REM depends on the AiClient interface.
+REM extracted by anyone who has the file. Never build a release this way. The
+REM key for the deployed app belongs in Render's environment variables, where
+REM the server reads it and the app never sees it.
 REM ---------------------------------------------------------------------------
 
 REM Get a key from https://aistudio.google.com/apikey

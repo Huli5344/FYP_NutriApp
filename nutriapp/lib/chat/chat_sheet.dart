@@ -22,7 +22,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../ui.dart';
-import 'chat_config.dart';
 import 'chat_controller.dart';
 import 'chat_message.dart';
 
@@ -52,12 +51,9 @@ Future<void> showChatSheet(BuildContext context, ChatController controller) {
 }
 
 class ChatSheet extends StatefulWidget {
-  const ChatSheet({super.key, required this.controller, this.showKeyWarning});
+  const ChatSheet({super.key, required this.controller});
 
   final ChatController controller;
-
-  /// Overrides the missing-key banner. For tests and screenshots.
-  final bool? showKeyWarning;
 
   @override
   State<ChatSheet> createState() => _ChatSheetState();
@@ -129,7 +125,6 @@ class _ChatSheetState extends State<ChatSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final noKey = widget.showKeyWarning ?? !AppConfig.hasApiKey;
     // Nine tenths of the screen: tall enough to hold a conversation, short
     // enough that the tab underneath is still visible and the sheet reads as
     // something covering the app rather than as a new page.
@@ -147,7 +142,6 @@ class _ChatSheetState extends State<ChatSheet> {
             return Column(
               children: [
                 _Handle(onClear: messages.isEmpty ? null : _confirmClear),
-                if (noKey) const _KeyBanner(),
                 Expanded(
                   child: messages.isEmpty
                       ? _Welcome(onPrompt: _send)
@@ -232,24 +226,6 @@ class _Handle extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _KeyBanner extends StatelessWidget {
-  const _KeyBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: const Color(0xFFFBF4EA),
-      padding: const EdgeInsets.all(10),
-      child: const Text(
-        'No Gemini key was compiled in, so NutriBot cannot answer. Run the '
-        'app with --dart-define=GEMINI_API_KEY=... (see run_app.bat.example).',
-        style: TextStyle(fontSize: 13, color: AppColors.warn),
       ),
     );
   }

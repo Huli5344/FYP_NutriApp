@@ -22,6 +22,7 @@ import 'screens/diary_screen.dart';
 import 'screens/discover_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/insights_screen.dart';
+import 'chat/backend_client.dart';
 import 'chat/chat_config.dart';
 import 'chat/chat_controller.dart';
 import 'chat/chat_sheet.dart';
@@ -129,16 +130,22 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   /// that is still streaming survives the sheet being closed, and the history
   /// is not re-read from storage every time somebody taps the button.
   ///
-  /// `GeminiClient` is named in exactly one place -- here. Everything else
-  /// depends on the `AiClient` interface, so moving the Gemini call behind
-  /// the Flask backend later is a change to this constructor and nothing
-  /// else. That matters: the key is compiled into the APK as it stands, and
-  /// anyone with the APK can read it out.
+  /// Which of the two `AiClient`s to use is decided here, in the one place
+  /// either is named. Everything downstream depends on the interface.
+  ///
+  /// The backend is the normal path: the key lives on the server, so an app
+  /// built with no flags has a working assistant and the APK carries no
+  /// secret. A key compiled in with `--dart-define` overrides that and goes
+  /// to Gemini directly, which is for working on the chat itself without a
+  /// server running -- and which does put the key in the APK, so it is not
+  /// how anything is shipped.
   late final ChatController _chat = ChatController(
-    client: GeminiClient(
-      apiKey: AppConfig.geminiApiKey,
-      model: AppConfig.geminiModel,
-    ),
+    client: AppConfig.hasApiKey
+        ? GeminiClient(
+            apiKey: AppConfig.geminiApiKey,
+            model: AppConfig.geminiModel,
+          )
+        : BackendClient(),
     storage: SharedPrefsChatStorage(),
   );
 
